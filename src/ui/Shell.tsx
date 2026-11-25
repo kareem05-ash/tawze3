@@ -1,45 +1,49 @@
-import { useEffect, useState } from 'react';
-import { Home, ReceiptText, ShoppingCart, Users, Menu, Moon, Sun, type LucideIcon } from 'lucide-react';
+import { ArrowRight, Home, ReceiptText, ShoppingCart, Users, Menu, Moon, Sun, type LucideIcon } from 'lucide-react';
 import { ar } from '../i18n/ar';
 import { useTheme } from './theme';
-import { useDb } from './DbProvider';
+import { useRoute } from './hooks';
+import { Dashboard } from './pages/Dashboard';
+import { InvoiceDetail, InvoiceForm, InvoiceList } from './pages/Invoices';
+import { PartiesPage, PartyDetail } from './pages/Parties';
+import { ProductsPage } from './pages/Products';
+import { MorePage, SettingsPage } from './pages/More';
 
 type Tab = 'home' | 'sales' | 'purchases' | 'parties' | 'more';
 const TABS: { id: Tab; icon: LucideIcon }[] = [
-  { id: 'home', icon: Home }, { id: 'sales', icon: ReceiptText }, { id: 'purchases', icon: ShoppingCart },
-  { id: 'parties', icon: Users }, { id: 'more', icon: Menu },
+  { id: 'home', icon: Home }, { id: 'sales', icon: ReceiptText }, { id: 'purchases', icon: ShoppingCart }, { id: 'parties', icon: Users }, { id: 'more', icon: Menu },
 ];
-const isTab = (v: string): v is Tab => TABS.some(t => t.id === v);
-const fromHash = (): Tab => { const h = location.hash.replace('#', ''); return isTab(h) ? h : 'home'; };
+const num = (s?: string) => { const n = Number(s); return Number.isInteger(n) && n > 0 ? n : undefined; };
+
+function Page({ route }: { route: string[] }) {
+  const [a, b, c] = route;
+  if (a === 'sales' || a === 'purchases') {
+    const kind = a === 'sales' ? 'sale' : 'purchase';
+    if (b === 'new') return <InvoiceForm key={`n${c}`} kind={kind} partyId={num(c)} />;
+    if (b === 'edit' && num(c)) return <InvoiceForm key={`e${c}`} kind={kind} replaceId={num(c)} />;
+    if (num(b)) return <InvoiceDetail key={b} id={num(b)!} kind={kind} />;
+    return <InvoiceList kind={kind} />;
+  }
+  if (a === 'parties') return num(b) ? <PartyDetail key={b} id={num(b)!} /> : <PartiesPage />;
+  if (a === 'more') return b === 'products' ? <ProductsPage /> : b === 'settings' ? <SettingsPage /> : <MorePage />;
+  return <Dashboard />;
+}
 
 export function Shell() {
-  const [tab, setTab] = useState<Tab>(fromHash);
+  const route = useRoute();
   const { theme, toggle } = useTheme();
-  const dbState = useDb();
-  useEffect(() => { const f = () => setTab(fromHash()); addEventListener('hashchange', f); return () => removeEventListener('hashchange', f); }, []);
-
+  const tab: Tab = TABS.find(t => t.id === route[0])?.id ?? 'home';
+  const back = () => { if (history.length > 1) history.back(); else location.hash = tab; };
   return (
     <div className="app">
       <header className="topbar">
-        <h1>{ar.pages[tab]}</h1>
-        <button className="icon-btn" onClick={toggle} aria-label={ar.theme.toggle} title={theme === 'dark' ? ar.theme.light : ar.theme.dark}>
-          {theme === 'dark' ? <Sun size={22} /> : <Moon size={22} />}
-        </button>
+        {route.length > 1 ? <button className="icon-btn" onClick={back} aria-label={ar.common.back}><ArrowRight size={22} /></button> : <span className="icon-btn" aria-hidden />}
+        <h1>{ar.appName}</h1>
+        <button className="icon-btn" onClick={toggle} aria-label={ar.theme.toggle} title={theme === 'dark' ? ar.theme.light : ar.theme.dark}>{theme === 'dark' ? <Sun size={22} /> : <Moon size={22} />}</button>
       </header>
-      <main className="content">
-        <section className="card">
-          <h2>{ar.empty.title}</h2>
-          <p className="muted">{ar.empty.soon}</p>
-          {tab === 'home' && dbState.status === 'ready' && (
-            <p className="badge">{ar.db.ready} · {ar.db.version}: {dbState.version.toLocaleString('ar-EG')}</p>
-          )}
-        </section>
-      </main>
+      <main className="content"><Page route={route} /></main>
       <nav className="bottom-nav" aria-label="التنقل الرئيسي">
         {TABS.map(({ id, icon: Icon }) => (
-          <a key={id} href={`#${id}`} className={tab === id ? 'active' : ''} aria-current={tab === id ? 'page' : undefined}>
-            <Icon size={22} /><span>{ar.nav[id]}</span>
-          </a>
+          <a key={id} href={`#${id}`} className={tab === id ? 'active' : ''} aria-current={tab === id ? 'page' : undefined}><Icon size={22} /><span>{ar.nav[id]}</span></a>
         ))}
       </nav>
     </div>

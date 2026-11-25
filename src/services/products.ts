@@ -110,3 +110,6 @@ export async function listProducts(db: Db, f: { search?: string; includeArchived
 }
 export const getProductUnits = (db: Db, productId: number) => db.all<{ unit_id: number; unit_name: string; factor_to_base: number }>(
   'SELECT pu.unit_id, u.name AS unit_name, pu.factor_to_base FROM product_units pu JOIN units u ON u.id = pu.unit_id WHERE pu.product_id = ? ORDER BY pu.factor_to_base', [productId]);
+
+export const listAllProductUnits = (db: Db) => db.all<{ product_id: number; unit_id: number; unit_name: string; factor_to_base: number }>(
+  'SELECT pu.product_id, pu.unit_id, u.name AS unit_name, pu.factor_to_base FROM product_units pu JOIN units u ON u.id = pu.unit_id ORDER BY pu.factor_to_base');

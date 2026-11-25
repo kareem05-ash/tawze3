@@ -30,17 +30,7 @@ const DB_NAME = 'distributor';
 
 export async function openCapacitorDb(): Promise<Db> {
   const sqlite = new SQLiteConnection(CapacitorSQLite);
-  if (Capacitor.getPlatform() === 'web') {
-    // Browser dev mode only: jeep-sqlite stores the DB in IndexedDB. Production data lives in native Android SQLite.
-    const { defineCustomElements } = await import('jeep-sqlite/loader');
-    defineCustomElements(window);
-    if (!document.querySelector('jeep-sqlite')) {
-      const el = document.createElement('jeep-sqlite');
-      document.body.appendChild(el);
-    }
-    await customElements.whenDefined('jeep-sqlite');
-    await sqlite.initWebStore();
-  }
+  if (!Capacitor.isNativePlatform()) throw new Error('capacitorAdapter is for the native Android app only');
   const consistent = (await sqlite.checkConnectionsConsistency()).result;
   const exists = (await sqlite.isConnection(DB_NAME, false)).result;
   const conn = consistent && exists

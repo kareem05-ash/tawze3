@@ -62,12 +62,12 @@ export async function getInvoiceDetail(db: Db, id: number): Promise<InvoiceDetai
   return { invoice, lines, payments, state };
 }
 
-export interface StatementEntry { id: number; type: string; delta: number; date: string; ref: string | null; reverses_id: number | null }
+export interface StatementEntry { id: number; type: string; delta: number; date: string; ref: string | null; reverses_id: number | null; source_table: string | null; source_id: number | null }
 export async function partyStatement(db: Db, partyId: number, from: string, to: string) {
   const o = await one<{ s: number }>(db, 'SELECT COALESCE(SUM(delta),0) AS s FROM ledger_entries WHERE party_id = ? AND date < ?', [partyId, from]);
   const opening = o?.s ?? 0;
   const rows = await db.all<StatementEntry>(
-    `SELECT l.id, l.type, l.delta, l.date, l.reverses_id, COALESCE(i.ref, p.ref, r.ref) AS ref
+    `SELECT l.id, l.type, l.delta, l.date, l.reverses_id, l.source_table, l.source_id, COALESCE(i.ref, p.ref, r.ref) AS ref
      FROM ledger_entries l
      LEFT JOIN invoices i ON l.source_table = 'invoices' AND i.id = l.source_id
      LEFT JOIN payments p ON l.source_table = 'payments' AND p.id = l.source_id

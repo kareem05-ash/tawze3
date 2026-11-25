@@ -6,3 +6,4 @@ export * from './payments';
 export * from './invoices';
 export * from './returns';
 export * from './adjustments';
+export * from './settings';
