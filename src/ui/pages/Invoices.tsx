@@ -11,6 +11,7 @@ import { useLoad, go } from '../hooks';
 import { ConfirmDialog, Empty, ErrorBox, Fab, Field, InlineAdd, Sheet, errText } from '../kit';
 import { dateLabel, milliToInput, minorToInput, money, qty, toMilli, toMinor, todayIso } from '../format';
 import { PaymentSheet } from './PaymentSheet';
+import { ProductForm } from './Products';
 
 type Kind = 'sale' | 'purchase';
 const route = (k: Kind) => (k === 'sale' ? 'sales' : 'purchases');
@@ -52,7 +53,7 @@ export function InvoiceForm({ kind, partyId, replaceId }: { kind: Kind; partyId?
   const [party, setParty] = useState(partyId ? String(partyId) : ''); const [date, setDate] = useState(todayIso());
   const [lines, setLines] = useState<LineState[]>([blankLine()]); const [disc, setDisc] = useState(''); const [paid, setPaid] = useState('');
   const [ext, setExt] = useState(''); const [notes, setNotes] = useState(''); const [err, setErr] = useState(''); const [busy, setBusy] = useState(false);
-  const [override, setOverride] = useState<string | null>(null); const [prefilled, setPrefilled] = useState(!replaceId);
+  const [quick, setQuick] = useState<number | null>(null); const [override, setOverride] = useState<string | null>(null); const [prefilled, setPrefilled] = useState(!replaceId);
 
   useLoad(async d => {
     if (!replaceId) return 0;
@@ -72,6 +73,12 @@ export function InvoiceForm({ kind, partyId, replaceId }: { kind: Kind; partyId?
   };
   const setLine = (key: number, patch: Partial<LineState>) => setLines(ls => ls.map(l => (l.key === key ? { ...l, ...patch } : l)));
   const pickProduct = (key: number, pid: string) => { const p = products.data?.find(x => String(x.id) === pid); const uid = p ? String(p.base_unit_id) : ''; setLine(key, { productId: pid, unitId: uid, price: pid ? defaultPrice(pid, uid) : '' }); };
+
+  const onProductCreated = async (key: number, id: number) => {
+    const p = (await listProducts(db)).find(x => x.id === id);
+    products.reload(); unitsAll.reload(); setQuick(null);
+    if (p) setLine(key, { productId: String(id), unitId: String(p.base_unit_id), price: minorToInput(kind === 'sale' ? p.sell_price : p.buy_price) });
+  };
 
   const parsed = useMemo(() => {
     const out: InvoiceLineIn[] = [];
@@ -125,6 +132,7 @@ export function InvoiceForm({ kind, partyId, replaceId }: { kind: Kind; partyId?
             <Field label={ar.common.product}>
               <select value={l.productId} onChange={e => pickProduct(l.key, e.target.value)}><option value="">{ar.invoice.pickProduct}</option>{products.data?.map(x => <option key={x.id} value={x.id}>{x.name}</option>)}</select>
             </Field>
+            <button type="button" className="link" onClick={() => setQuick(l.key)}>{ar.product.newInline}</button>
             {p && kind === 'sale' && <p className="muted small">{ar.invoice.available}: {qty(p.stock_milli)} {p.base_unit_name}</p>}
             <div className="row3">
               <Field label={ar.common.qty}><input inputMode="decimal" value={l.qty} onChange={e => setLine(l.key, { qty: e.target.value })} /></Field>
@@ -137,6 +145,7 @@ export function InvoiceForm({ kind, partyId, replaceId }: { kind: Kind; partyId?
           </section>
         );
       })}
+      {products.data?.length === 0 && <p className="notice">{ar.invoice.noProducts}</p>}
       <button className="btn ghost block" onClick={() => setLines([...lines, blankLine()])}>＋ {ar.invoice.addLine}</button>
       <section className="card">
         <div className="row2"><Field label={ar.invoice.invoiceDiscount}><input inputMode="decimal" value={disc} onChange={e => setDisc(e.target.value)} /></Field><Field label={ar.invoice.paidNow}><input inputMode="decimal" value={paid} onChange={e => setPaid(e.target.value)} /></Field></div>
@@ -149,6 +158,7 @@ export function InvoiceForm({ kind, partyId, replaceId }: { kind: Kind; partyId?
         <ErrorBox message={err} />
         <button className="btn block" disabled={busy} onClick={() => void submit()}>{ar.common.save}</button>
       </section>
+      {quick !== null && <ProductForm onClose={() => setQuick(null)} onDone={id => void onProductCreated(quick, id)} />}
       {override && <ConfirmDialog title={ar.invoice.overrideTitle} message={`${override}. ${ar.invoice.overrideAsk}`} confirmLabel={ar.invoice.overrideYes} danger onCancel={() => setOverride(null)} onConfirm={() => { setOverride(null); void submit(true); }} />}
     </>
   );

@@ -6,7 +6,7 @@ import { useLoad } from '../hooks';
 import { ConfirmDialog, Empty, ErrorBox, Fab, Field, InlineAdd, Sheet, errText } from '../kit';
 import { milliToInput, minorToInput, money, qty, toMilli, toMinor, todayIso } from '../format';
 
-function ProductForm({ existing, onDone, onClose }: { existing?: ProductRow; onDone: () => void; onClose: () => void }) {
+export function ProductForm({ existing, onDone, onClose }: { existing?: ProductRow; onDone: (id: number) => void; onClose: () => void }) {
   const { db } = useReadyDb();
   const cats = useLoad(listCategories); const units = useLoad(listUnits);
   const [name, setName] = useState(existing?.name ?? ''); const [desc, setDesc] = useState(existing?.description ?? ''); const [notes, setNotes] = useState(existing?.notes ?? '');
@@ -24,8 +24,9 @@ function ProductForm({ existing, onDone, onClose }: { existing?: ProductRow; onD
       if (!base) { setErr(`${ar.common.required}: ${ar.product.baseUnit}`); return; }
       const extraUnits = extra.filter(x => x.unitId).map(x => ({ unitId: Number(x.unitId), factorToBase: Number(x.factor.replace(',', '.')) }));
       const common = { name, description: desc, notes, categoryId: cat ? Number(cat) : null, buyPrice: buyP, sellPrice: sellP, lowStockMilli: lowM, extraUnits };
-      if (existing) await updateProduct(db, existing.id, { ...common, baseUnitId: Number(base) }); else await createProduct(db, { ...common, baseUnitId: Number(base) });
-      onDone();
+      let id: number;
+      if (existing) { await updateProduct(db, existing.id, { ...common, baseUnitId: Number(base) }); id = existing.id; } else id = await createProduct(db, { ...common, baseUnitId: Number(base) });
+      onDone(id);
     } catch (e) { setErr(errText(e)); }
   };
   return (
@@ -79,9 +80,9 @@ function AdjustSheet({ product, onDone, onClose }: { product: ProductRow; onDone
   );
 }
 
-export function ProductsPage() {
+export function ProductsPage({ autoNew = false }: { autoNew?: boolean }) {
   const { db } = useReadyDb();
-  const [q, setQ] = useState(''); const [arch, setArch] = useState(false); const [sheet, setSheet] = useState<{ kind: 'form' | 'adjust' | 'archive'; p?: ProductRow } | null>(null);
+  const [q, setQ] = useState(''); const [arch, setArch] = useState(false); const [sheet, setSheet] = useState<{ kind: 'form' | 'adjust' | 'archive'; p?: ProductRow } | null>(autoNew ? { kind: 'form' } : null);
   const { data, error, reload } = useLoad(d => listProducts(d, { search: q, includeArchived: arch }), [q, arch]);
   const done = () => { setSheet(null); reload(); };
   return (

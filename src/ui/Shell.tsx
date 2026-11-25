@@ -6,7 +6,8 @@ import { Dashboard } from './pages/Dashboard';
 import { InvoiceDetail, InvoiceForm, InvoiceList } from './pages/Invoices';
 import { PartiesPage, PartyDetail } from './pages/Parties';
 import { ProductsPage } from './pages/Products';
-import { MorePage, SettingsPage } from './pages/More';
+import { ReportsPage } from './pages/Reports';
+import { BackupPage, MorePage, SettingsPage } from './pages/More';
 
 type Tab = 'home' | 'sales' | 'purchases' | 'parties' | 'more';
 const TABS: { id: Tab; icon: LucideIcon }[] = [
@@ -24,7 +25,7 @@ function Page({ route }: { route: string[] }) {
     return <InvoiceList kind={kind} />;
   }
   if (a === 'parties') return num(b) ? <PartyDetail key={b} id={num(b)!} /> : <PartiesPage />;
-  if (a === 'more') return b === 'products' ? <ProductsPage /> : b === 'settings' ? <SettingsPage /> : <MorePage />;
+  if (a === 'more') return b === 'products' ? <ProductsPage key={c ?? ''} autoNew={c === 'new'} /> : b === 'reports' ? <ReportsPage /> : b === 'backup' ? <BackupPage /> : b === 'settings' ? <SettingsPage /> : <MorePage />;
   return <Dashboard />;
 }
 

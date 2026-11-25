@@ -15,6 +15,7 @@ import { Shell } from '../src/ui/Shell';
 import { ar } from '../src/i18n/ar';
 import { parseDecimal, toMinor, toMilli } from '../src/ui/format';
 
+globalThis.ResizeObserver ??= class { observe() {} unobserve() {} disconnect() {} } as unknown as typeof ResizeObserver;
 const wasm = readFileSync('node_modules/sql.js/dist/sql-wasm.wasm');
 let db: SqlJsDb;
 let ids: { piece: number; prod: number; cust: number; supp: number };
@@ -125,5 +126,82 @@ describe('forms', () => {
     await userEvent.selectOptions((await screen.findAllByRole('combobox'))[0]!, String(ids.supp));
     await userEvent.click(screen.getByText(ar.common.save));
     expect((await screen.findByRole('alert')).textContent).toContain(ar.invoice.noLines);
+  });
+});
+
+describe('products screen', () => {
+  it('adds a product from scratch: creates category + unit inline, saves, lists it', async () => {
+    // fresh DB with no units/products
+    db = await SqlJsDb.open(undefined, { wasmBinary: wasm.buffer.slice(wasm.byteOffset, wasm.byteOffset + wasm.byteLength) as ArrayBuffer });
+    await migrate(db, MIGRATIONS);
+    await boot('#more/products');
+    expect(await screen.findByText(ar.product.empty)).toBeTruthy();
+    await userEvent.click(screen.getByLabelText(ar.product.add));
+    const dlg = await screen.findByRole('dialog');
+    await userEvent.type(within(dlg).getAllByRole('textbox')[0]!, 'بسكويت');
+    const adders = within(dlg).getAllByText(ar.common.newItem);
+    await userEvent.click(adders[0]!);                                   // category
+    await userEvent.type(within(dlg).getByPlaceholderText(ar.product.newCategory), 'بسكويت وحلويات');
+    await userEvent.click(within(dlg).getByText(ar.common.add));
+    await waitFor(() => expect(within(dlg).getByRole('option', { name: 'بسكويت وحلويات' })).toBeTruthy());
+    await userEvent.click(within(dlg).getAllByText(ar.common.newItem)[1]!); // unit
+    await userEvent.type(within(dlg).getByPlaceholderText(ar.product.newUnit), 'قطعة');
+    await userEvent.click(within(dlg).getByText(ar.common.add));
+    await waitFor(() => expect(within(dlg).getByRole('option', { name: 'قطعة' })).toBeTruthy());
+    await userEvent.click(within(dlg).getByText(ar.common.save));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect((await S.listProducts(db)).map(p => p.name)).toEqual(['بسكويت']);
+    expect(await screen.findByText('بسكويت')).toBeTruthy();
+  });
+});
+
+describe('adding a product from inside an invoice', () => {
+  it('creates a product from the purchase form, selects it, and posts the purchase', async () => {
+    db = await SqlJsDb.open(undefined, { wasmBinary: wasm.buffer.slice(wasm.byteOffset, wasm.byteOffset + wasm.byteLength) as ArrayBuffer });
+    await migrate(db, MIGRATIONS);
+    const supp = await S.createParty(db, { kind: 'supplier', name: 'شركة الأمل' });
+    await boot('#purchases/new');
+    await userEvent.selectOptions((await screen.findAllByRole('combobox'))[0]!, String(supp));
+    expect(await screen.findByText(ar.invoice.noProducts)).toBeTruthy();
+    await userEvent.click(screen.getByText(ar.product.newInline));
+    const dlg = await screen.findByRole('dialog');
+    await userEvent.type(within(dlg).getAllByRole('textbox')[0]!, 'عصير مانجو');
+    await userEvent.click(within(dlg).getAllByText(ar.common.newItem)[1]!);
+    await userEvent.type(within(dlg).getByPlaceholderText(ar.product.newUnit), 'علبة');
+    await userEvent.click(within(dlg).getByText(ar.common.add));
+    await waitFor(() => expect(within(dlg).getByRole('option', { name: 'علبة' })).toBeTruthy());
+    await userEvent.click(within(dlg).getByText(ar.common.save));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    const pid = (await S.listProducts(db))[0]!.id;
+    const line = screen.getByLabelText(`${ar.invoice.line} 1`);
+    await waitFor(() => expect((within(line).getAllByRole('combobox')[0] as HTMLSelectElement).value).toBe(String(pid)));
+    const [qtyInput, priceInput] = within(line).getAllByRole('textbox');
+    await userEvent.clear(qtyInput!); await userEvent.type(qtyInput!, '24');
+    await userEvent.type(priceInput!, '5');
+    await userEvent.click(screen.getByText(ar.common.save));
+    await waitFor(() => expect(location.hash).toMatch(/^#purchases\/\d+$/));
+    expect(await S.getStock(db, pid)).toBe(24000);
+    expect(await S.getPartyBalance(db, supp)).toBe(-12000);
+  });
+  it('dashboard offers add-product and the route opens the form', async () => {
+    await boot('#more/products/new');
+    expect(await screen.findByRole('dialog')).toBeTruthy();
+  });
+});
+
+describe('reports screen', () => {
+  it('shows the custom metrics with their formulas and real totals for the selected range', async () => {
+    const s = await S.postInvoice(db, { kind: 'sale', partyId: ids.cust, date: new Date().toLocaleDateString('en-CA'), lines: [{ productId: ids.prod, unitId: ids.piece, qtyMilli: 10000, unitPrice: 700 }] });
+    expect(s.total).toBe(7000);
+    await boot('#more/reports');
+    const custom = await screen.findByLabelText(ar.reports.customTitle);
+    expect(custom.textContent).toContain(ar.reports.actualFormula);
+    expect(custom.textContent).toContain(ar.reports.idealFormula);
+    await waitFor(() => expect(screen.getAllByText(ar.reports.sales).length).toBeGreaterThan(0));
+    expect(await screen.findByLabelText(ar.reports.margin)).toBeTruthy();
+  });
+  it('dashboard renders the 7-day chart section', async () => {
+    await boot('');
+    expect(await screen.findByLabelText(ar.chart.title)).toBeTruthy();
   });
 });

@@ -7,3 +7,5 @@ export * from './invoices';
 export * from './returns';
 export * from './adjustments';
 export * from './settings';
+export * from './backup';
+export * from './reports';
