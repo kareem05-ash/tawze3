@@ -1,5 +1,3 @@
-PRAGMA foreign_keys = ON;
-CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
 CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE categories (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, archived INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE units (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE);
@@ -42,4 +40,3 @@ CREATE INDEX idx_ledger_party_date ON ledger_entries(party_id, date);
 CREATE INDEX idx_moves_product ON stock_movements(product_id, date);
 CREATE INDEX idx_invoices_party_date ON invoices(party_id, date);
 CREATE INDEX idx_payments_date ON payments(date, direction);
-INSERT INTO schema_migrations(version, applied_at) VALUES (1, datetime('now'));

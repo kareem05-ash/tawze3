@@ -1,0 +1,21 @@
+:root{--bg:#f4f6f8;--surface:#fff;--text:#0f172a;--muted:#64748b;--primary:#0f766e;--primary-ink:#fff;--border:#e2e8f0;--radius:14px;--nav-h:64px}
+:root[data-theme=dark]{--bg:#0b1220;--surface:#131c2e;--text:#e8eef7;--muted:#94a3b8;--primary:#2dd4bf;--primary-ink:#04201d;--border:#24314a}
+*{box-sizing:border-box}
+html,body,#root{height:100%}
+body{margin:0;background:var(--bg);color:var(--text);font-family:'Cairo',system-ui,sans-serif;font-size:16px;line-height:1.6;-webkit-tap-highlight-color:transparent}
+.app{display:flex;flex-direction:column;min-height:100%;padding-top:env(safe-area-inset-top)}
+.topbar{position:sticky;top:0;z-index:5;display:flex;align-items:center;justify-content:space-between;padding:8px 16px;background:var(--surface);border-bottom:1px solid var(--border)}
+.topbar h1{font-size:1.15rem;margin:0}
+.content{flex:1;padding:16px;padding-bottom:calc(var(--nav-h) + 24px + env(safe-area-inset-bottom));max-width:720px;width:100%;margin-inline:auto}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px}
+.card h2{margin:0 0 4px;font-size:1.05rem}
+.muted{color:var(--muted)}
+.badge{display:inline-block;margin:8px 0 0;padding:4px 12px;border-radius:999px;background:color-mix(in srgb,var(--primary) 15%,transparent);color:var(--primary);font-weight:600;font-size:.9rem}
+.icon-btn,.btn{min-width:48px;min-height:48px;border:0;border-radius:12px;background:transparent;color:var(--text);cursor:pointer;display:grid;place-items:center;font:inherit}
+.btn{background:var(--primary);color:var(--primary-ink);padding:0 20px;font-weight:700}
+.center{display:grid;place-content:center;justify-items:center;gap:8px;min-height:100vh;padding:24px;text-align:center}
+.bottom-nav{position:fixed;inset-inline:0;bottom:0;display:grid;grid-template-columns:repeat(5,1fr);height:calc(var(--nav-h) + env(safe-area-inset-bottom));padding-bottom:env(safe-area-inset-bottom);background:var(--surface);border-top:1px solid var(--border)}
+.bottom-nav a{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;color:var(--muted);text-decoration:none;font-size:.75rem;min-height:48px}
+.bottom-nav a.active{color:var(--primary);font-weight:700}
+:focus-visible{outline:3px solid var(--primary);outline-offset:2px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
