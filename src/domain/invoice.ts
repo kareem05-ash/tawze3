@@ -25,3 +25,10 @@ export function splitPayment(total: Minor, paidNow: Minor): PaymentSplit {
   const applied = Math.min(total, paidNow);
   return { paid: applied, outstanding: total - applied, overpaymentAdvance: paidNow - applied };
 }
+
+export interface InvoiceStatus { net: Minor; paid: Minor; outstanding: Minor; credit: Minor }
+/** net = total minus returns. Payments above net become `credit` on the party account (never negative outstanding). */
+export function invoiceStatus(total: Minor, returned: Minor, paid: Minor): InvoiceStatus {
+  const net = total - returned;
+  return { net, paid, outstanding: Math.max(0, net - paid), credit: Math.max(0, paid - net) };
+}

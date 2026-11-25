@@ -1,6 +1,6 @@
 /** ALL user-facing strings live here so wording can be corrected in one place. */
 export const ar = {
-  appName: 'موزّع برو',
+  appName: 'توزيع',
   nav: { home: 'الرئيسية', sales: 'المبيعات', purchases: 'المشتريات', parties: 'الحسابات', more: 'المزيد' },
   pages: {
     home: 'نظرة عامة', sales: 'فواتير البيع', purchases: 'فواتير الشراء', parties: 'العملاء والموردون', more: 'المزيد',

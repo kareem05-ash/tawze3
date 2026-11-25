@@ -104,3 +104,17 @@ describe('custom metrics', () => {
     expect(percentChange(0, 0)).toEqual({ kind: 'none' });
   });
 });
+
+import { invoiceStatus } from '../src/domain/invoice';
+import { withRunningBalance } from '../src/domain/ledger';
+describe('phase 3 pure helpers', () => {
+  it('invoice status: returns reduce outstanding; excess payment is credit', () => {
+    expect(invoiceStatus(10000, 0, 4000)).toEqual({ net: 10000, paid: 4000, outstanding: 6000, credit: 0 });
+    expect(invoiceStatus(10000, 2000, 4000).outstanding).toBe(4000);
+    expect(invoiceStatus(10000, 4000, 10000)).toEqual({ net: 6000, paid: 10000, outstanding: 0, credit: 4000 });
+  });
+  it('running balance', () => {
+    const r = withRunningBalance(1000, [{ delta: 500 }, { delta: -2000 }]);
+    expect(r.map(x => x.balance)).toEqual([1500, -500]);
+  });
+});

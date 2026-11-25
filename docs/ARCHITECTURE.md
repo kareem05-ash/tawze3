@@ -1,4 +1,4 @@
-# Distributor Pro — Phase 1 architecture
+# tawze3 — Phase 1 architecture
 
 Stack: React + strict TS + Vite + Capacitor; SQLite via @capacitor-community/sqlite (Android) with its jeep-sqlite web adapter for browser dev; Recharts; pdfmake/pdf-lib with a bundled Arabic font + HarfBuzz-style shaping (to be verified by rendering a real PDF in Phase 4); Vitest.
 

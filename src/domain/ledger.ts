@@ -47,3 +47,9 @@ export function balanceLabelAr(kind: PartyKind, b: Minor): string {
   if (kind === 'customer') return s === 'owes_us' ? 'مستحق لنا على العميل' : 'رصيد دائن للعميل (دفع مقدماً)';
   return s === 'we_owe' ? 'مستحق للمورد علينا' : 'رصيد مدين على المورد (دفعنا مقدماً)';
 }
+
+/** Adds a running balance to chronologically ordered rows, starting from `opening`. */
+export function withRunningBalance<T extends { delta: Minor }>(opening: Minor, rows: T[]): (T & { balance: Minor })[] {
+  let bal = opening;
+  return rows.map(r => { bal += r.delta; return { ...r, balance: bal }; });
+}
