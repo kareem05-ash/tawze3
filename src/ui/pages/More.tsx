@@ -6,6 +6,7 @@ import { ConfirmDialog, ErrorBox, Field, errText } from '../kit';
 import { useLoad } from '../hooks';
 import { dateLabel } from '../format';
 import { useTheme } from '../theme';
+import { PinSheet, useLock } from '../Lock';
 
 export function MorePage() {
   return (
@@ -20,6 +21,7 @@ export function MorePage() {
 }
 export function SettingsPage() {
   const { db } = useReadyDb(); const { theme, toggle } = useTheme();
+  const lock = useLock(); const [pinMode, setPinMode] = useState<'set' | 'change' | 'disable' | null>(null); const [pinMsg, setPinMsg] = useState('');
   const [biz, setBiz] = useState(''); const [saved, setSaved] = useState(false);
   useEffect(() => { void getSetting(db, 'business_name').then(v => setBiz(v ?? '')); }, [db]);
   return (
@@ -28,6 +30,14 @@ export function SettingsPage() {
       <Field label={ar.settings.business}><input value={biz} onChange={e => { setBiz(e.target.value); setSaved(false); }} /></Field>
       <button className="btn" onClick={async () => { await setSetting(db, 'business_name', biz.trim()); setSaved(true); }}>{ar.common.save}</button>{saved && <span className="muted"> {ar.settings.saved}</span>}
       <hr /><p>{ar.settings.theme}</p><button className="btn ghost" onClick={toggle}>{theme === 'dark' ? ar.theme.light : ar.theme.dark}</button>
+      <hr /><h3>{ar.lock.section}</h3><p className="muted">{lock.enabled ? ar.lock.on : ar.lock.off}</p>
+      <div className="actions">
+        {!lock.enabled && <button className="btn" onClick={() => setPinMode('set')}>{ar.lock.enable}</button>}
+        {lock.enabled && <><button className="btn ghost" onClick={() => setPinMode('change')}>{ar.lock.change}</button><button className="btn ghost" onClick={() => setPinMode('disable')}>{ar.lock.disable}</button><button className="btn" onClick={lock.lockNow}>{ar.lock.lockNow}</button></>}
+      </div>
+      {pinMsg && <p className="amt-in" role="status">{pinMsg}</p>}
+      <p className="muted small">{ar.lock.note}</p>
+      {pinMode && <PinSheet mode={pinMode} onClose={() => setPinMode(null)} onDone={m => { setPinMode(null); setPinMsg(m); lock.refresh(); }} />}
     </section>
   );
 }

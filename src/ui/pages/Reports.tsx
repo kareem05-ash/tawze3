@@ -38,7 +38,7 @@ export function ReportsPage() {
     <>
       <h2 className="page-title">{ar.reports.title}</h2>
       <div className="actions">{presets.map(p => <button key={p.label} className={`btn small ${from === p.f && to === p.to ? '' : 'ghost'}`} onClick={() => { setFrom(p.f); setTo(p.to); }}>{p.label}</button>)}</div>
-      <div className="row2"><Field label={ar.common.from}><input type="date" value={from} max={to} onChange={e => e.target.value && setFrom(e.target.value)} /></Field><Field label={ar.common.to}><input type="date" value={to} min={from} onChange={e => e.target.value && setTo(e.target.value)} /></Field></div>
+      <div className="dates"><Field label={ar.common.from}><input type="date" value={from} max={to} onChange={e => e.target.value && setFrom(e.target.value)} /></Field><Field label={ar.common.to}><input type="date" value={to} min={from} onChange={e => e.target.value && setTo(e.target.value)} /></Field></div>
       <ErrorBox message={rep.error ?? prod.error} />
       {r && ch && (
         <>

@@ -221,8 +221,8 @@ export function InvoiceDetail({ id, kind }: { id: number; kind: Kind }) {
         <div className="kv"><span>{kind === 'sale' ? ar.invoice.customer : ar.invoice.supplier}</span><strong>{det.invoice.party_name}</strong></div>
         <div className="kv"><span>{ar.common.date}</span><strong>{dateLabel(String(inv.date))}</strong></div>
         {inv.external_ref ? <div className="kv"><span>{ar.invoice.extRef}</span><strong>{String(inv.external_ref)}</strong></div> : null}
-        <table className="lines"><thead><tr><th>{ar.common.product}</th><th>{ar.common.qty}</th><th>{ar.common.price}</th><th>{ar.common.total}</th></tr></thead>
-          <tbody>{det.lines.map(l => <tr key={String(l.id)}><td>{l.product_name}</td><td>{qty(Number(l.qty_milli))} {l.unit_name}</td><td>{money(Number(l.unit_price))}</td><td>{money(Number(l.line_total))}</td></tr>)}</tbody></table>
+        <div className="table-wrap"><table className="lines"><thead><tr><th>{ar.common.product}</th><th>{ar.common.qty}</th><th>{ar.common.price}</th><th>{ar.common.total}</th></tr></thead>
+          <tbody>{det.lines.map(l => <tr key={String(l.id)}><td>{l.product_name}</td><td>{qty(Number(l.qty_milli))} {l.unit_name}</td><td>{money(Number(l.unit_price))}</td><td>{money(Number(l.line_total))}</td></tr>)}</tbody></table></div>
         <div className="kv"><span>{ar.invoice.subtotal}</span><strong>{money(Number(inv.subtotal))}</strong></div>
         {Number(inv.discount) > 0 && <div className="kv"><span>{ar.invoice.invoiceDiscount}</span><strong>−{money(Number(inv.discount))}</strong></div>}
         <div className="kv big"><span>{ar.common.total}</span><strong>{money(Number(inv.total))}</strong></div>

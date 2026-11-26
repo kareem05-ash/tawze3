@@ -97,7 +97,7 @@ export function PartyDetail({ id }: { id: number }) {
       </section>
       <section className="card">
         <h3>{ar.party.statement}</h3>
-        <div className="row2"><Field label={ar.common.from}><input type="date" value={from} onChange={e => setFrom(e.target.value)} /></Field><Field label={ar.common.to}><input type="date" value={to} onChange={e => setTo(e.target.value)} /></Field></div>
+        <div className="dates"><Field label={ar.common.from}><input type="date" value={from} onChange={e => setFrom(e.target.value)} /></Field><Field label={ar.common.to}><input type="date" value={to} onChange={e => setTo(e.target.value)} /></Field></div>
         <ErrorBox message={stmt.error} />
         {stmt.data && (
           <ul className="list tight">

@@ -25,7 +25,7 @@ export async function createBackup(db: Db, now = new Date()): Promise<{ text: st
   for (const t of await tableNames(db)) {
     const info = await db.all<{ name: string }>(`PRAGMA table_info(${q(t)})`);
     const columns = info.map(c => c.name);
-    const rows = await db.all<Record<string, SqlParam>>(`SELECT * FROM ${q(t)} ORDER BY rowid`);
+    const rows = (await db.all<Record<string, SqlParam>>(`SELECT * FROM ${q(t)} ORDER BY rowid`)).filter(r => !(t === 'settings' && String(r.key).startsWith('pin_'))); // the app-lock PIN never leaves the device
     data[t] = { columns, rows: rows.map(r => columns.map(c => r[c] ?? null)) };
   }
   const createdAt = now.toISOString();
@@ -73,6 +73,7 @@ export async function restoreBackup(db: Db, text: string, saveSafetyCopy: (curre
   const safety = await createBackup(db);
   try { await saveSafetyCopy(safety.text); } catch (e) { throw new ServiceError('SAFETY_COPY_FAILED', 'تعذّر حفظ نسخة أمان من البيانات الحالية، لم يتم أي تغيير', { cause: String(e) }); }
   const tables = await dependencyOrder(db, await tableNames(db));
+  const keepPin = await db.all<{ key: string; value: string }>("SELECT key, value FROM settings WHERE key LIKE 'pin\\_%' ESCAPE '\\'");
   await db.transaction(async tx => {
     for (const t of [...tables].reverse()) await tx.run(`DELETE FROM ${q(t)}`);
     for (const t of tables) {
@@ -80,6 +81,7 @@ export async function restoreBackup(db: Db, text: string, saveSafetyCopy: (curre
       const sql = `INSERT INTO ${q(t)}(${d.columns.map(q).join(',')}) VALUES (${d.columns.map(() => '?').join(',')})`;
       for (const r of d.rows) await tx.run(sql, r);
     }
+    for (const k of keepPin) await tx.run('INSERT OR REPLACE INTO settings(key, value) VALUES (?, ?)', [k.key, k.value]); // restoring data must not remove or change the lock
   });
   return summary;
 }
