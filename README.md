@@ -21,3 +21,9 @@ npm run build
 ## Docs
 - docs/ARCHITECTURE.md, docs/ACCOUNTING.md
 - Android packaging, backup/restore and the Arabic owner guide come in later phases.
+
+## Invoice export (PDF / PNG / WhatsApp)
+Open any sale or purchase invoice and use the buttons under the receipt.
+- The receipt is drawn on a canvas with the bundled Cairo font, so Arabic shaping is done by the browser. PNG is that image; PDF embeds it as one page (text is not selectable).
+- Android app: opens the system share sheet; choose WhatsApp, then the contact. Apps cannot pre-select a WhatsApp contact for an image.
+- Browser (dev): uses the browser share sheet if it supports files; otherwise downloads the PNG and opens WhatsApp (the customer's/supplier's chat if a phone is saved, otherwise the contact picker) so you can attach it.

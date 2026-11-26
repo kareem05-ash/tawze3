@@ -69,3 +69,5 @@ table.lines{width:100%;border-collapse:collapse;margin:10px 0;font-size:.85rem}t
 .line-total{display:flex;flex-direction:column;justify-content:center}
 .totals{display:flex;justify-content:space-between;gap:12px;margin:8px 0 12px}.totals>div{display:flex;flex-direction:column}
 hr{border:0;border-top:1px solid var(--border);margin:16px 0}
+
+.btn.wa{background:#16a34a;color:#fff}

@@ -10,6 +10,7 @@ import { useReadyDb } from '../DbProvider';
 import { useLoad, go } from '../hooks';
 import { ConfirmDialog, Empty, ErrorBox, Fab, Field, InlineAdd, Sheet, errText } from '../kit';
 import { dateLabel, milliToInput, minorToInput, money, qty, toMilli, toMinor, todayIso } from '../format';
+import { exportReceipt, type ExportFormat } from '../../export/receiptExport';
 import { PaymentSheet } from './PaymentSheet';
 import { ProductForm } from './Products';
 
@@ -197,7 +198,7 @@ function ReturnSheet({ invoiceId, kind, onDone, onClose }: { invoiceId: number; 
 
 export function InvoiceDetail({ id, kind }: { id: number; kind: Kind }) {
   const { db } = useReadyDb();
-  const [sheet, setSheet] = useState<'pay' | 'ret' | 'cancel' | null>(null); const [err, setErr] = useState('');
+  const [sheet, setSheet] = useState<'pay' | 'ret' | 'cancel' | null>(null); const [err, setErr] = useState(''); const [note, setNote] = useState(''); const [busy, setBusy] = useState(false);
   const { data, error, reload } = useLoad(async d => ({ det: await getInvoiceDetail(d, id), biz: (await getSetting(d, 'business_name')) ?? ar.appName }), [id]);
   if (error) return <ErrorBox message={error} />;
   if (!data) return <p className="muted">{ar.common.loading}</p>;
@@ -205,6 +206,13 @@ export function InvoiceDetail({ id, kind }: { id: number; kind: Kind }) {
   const { det, biz } = data; const inv = det.invoice as Record<string, unknown>; const st = det.state;
   const activePays = det.payments.filter(p => !p.cancelled_at);
   const done = () => { setSheet(null); reload(); };
+  const doExport = async (f: ExportFormat) => {
+    setBusy(true); setErr(''); setNote(ar.share.preparing);
+    try {
+      const r = await exportReceipt(db, id, f);
+      setNote(r.kind === 'whatsapp-opened' ? ar.share.waOpened : r.kind === 'downloaded' ? ar.share.downloaded : r.kind === 'shared' ? ar.share.shared : '');
+    } catch (e) { setNote(''); setErr(ar.share.failed + ': ' + errText(e)); } finally { setBusy(false); }
+  };
   return (
     <>
       <section className="card receipt" aria-label={ar.invoice.receipt}>
@@ -225,6 +233,12 @@ export function InvoiceDetail({ id, kind }: { id: number; kind: Kind }) {
         {inv.notes ? <p className="muted">{String(inv.notes)}</p> : null}
       </section>
       {activePays.length > 0 && <section className="card"><h3>{ar.invoice.payments}</h3><ul className="list tight">{activePays.map(p => <li key={p.id} className="row static"><span>{p.ref} · {dateLabel(p.date)}</span><strong>{money(p.allocated)}</strong></li>)}</ul></section>}
+      <div className="actions" role="group" aria-label={ar.share.title}>
+        <button className="btn ghost" disabled={busy} onClick={() => void doExport('pdf')}>{ar.share.pdf}</button>
+        <button className="btn ghost" disabled={busy} onClick={() => void doExport('png')}>{ar.share.png}</button>
+        <button className="btn wa" disabled={busy} onClick={() => void doExport('whatsapp')}>{ar.share.whatsapp}</button>
+      </div>
+      {note && <p className="muted" role="status">{note}</p>}
       <ErrorBox message={err} />
       {!st.cancelled && (
         <div className="actions">

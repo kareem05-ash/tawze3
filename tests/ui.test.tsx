@@ -13,6 +13,9 @@ import { DbProvider } from '../src/ui/DbProvider';
 import { ThemeProvider } from '../src/ui/theme';
 import { Shell } from '../src/ui/Shell';
 import { ar } from '../src/i18n/ar';
+import { vi } from 'vitest';
+vi.mock('../src/export/receiptExport', () => ({ exportReceipt: vi.fn(async () => ({ kind: 'downloaded', filename: 'x.pdf' })) }));
+import { exportReceipt } from '../src/export/receiptExport';
 import { parseDecimal, toMinor, toMilli } from '../src/ui/format';
 
 globalThis.ResizeObserver ??= class { observe() {} unobserve() {} disconnect() {} } as unknown as typeof ResizeObserver;
@@ -203,5 +206,19 @@ describe('reports screen', () => {
   it('dashboard renders the 7-day chart section', async () => {
     await boot('');
     expect(await screen.findByLabelText(ar.chart.title)).toBeTruthy();
+  });
+});
+
+describe('invoice export buttons', () => {
+  it('offers PDF, PNG and WhatsApp on an invoice and calls the exporter with the right format', async () => {
+    const sale = await S.postInvoice(db, { kind: 'sale', partyId: ids.cust, date: '2026-11-20', lines: [{ productId: ids.prod, unitId: ids.piece, qtyMilli: 1000, unitPrice: 700 }] });
+    await boot(`#sales/${sale.id}`);
+    await userEvent.click(await screen.findByText(ar.share.whatsapp));
+    await waitFor(() => expect(exportReceipt).toHaveBeenCalledWith(expect.anything(), sale.id, 'whatsapp'));
+    await userEvent.click(screen.getByText(ar.share.pdf));
+    await waitFor(() => expect(exportReceipt).toHaveBeenCalledWith(expect.anything(), sale.id, 'pdf'));
+    await userEvent.click(screen.getByText(ar.share.png));
+    await waitFor(() => expect(exportReceipt).toHaveBeenCalledWith(expect.anything(), sale.id, 'png'));
+    expect(await screen.findByText(ar.share.downloaded)).toBeTruthy();
   });
 });

@@ -79,6 +79,12 @@ export const ar = {
     negMargin: 'هامش سالب (تُباع بأقل من التكلفة)', missing: 'مفقود / تالف', none: 'لا يوجد', newActivity: 'نشاط جديد', noChange: '—', noMargin: 'غير متاح',
     sold: 'مباع', revenue: 'إيراد', margin1: 'هامش', stock: 'مخزون', missingQty: 'مفقود', damagedQty: 'تالف',
   },
+  receipt: { accountBalance: 'رصيد الحساب بعد هذه الفاتورة', thanks: 'شكراً لتعاملكم' },
+  share: {
+    title: 'تصدير الفاتورة ومشاركتها',
+    pdf: 'PDF', png: 'صورة PNG', whatsapp: 'واتساب', preparing: 'جارٍ التجهيز…', downloaded: 'تم تنزيل الملف',
+    waOpened: 'تم تنزيل الصورة وفتح واتساب. أرفق الصورة في المحادثة.', shared: 'تمت المشاركة', failed: 'تعذّر إنشاء الملف',
+  },
   chart: { title: 'آخر ٧ أيام', value: 'المبيعات والمشتريات', cash: 'المقبوض والمدفوع', sales: 'مبيعات', purchases: 'مشتريات', received: 'مقبوض', paid: 'مدفوع' },
   settings: { title: 'الإعدادات', business: 'اسم النشاط (يظهر في الإيصالات)', theme: 'المظهر', saved: 'تم الحفظ' },
 } as const;
