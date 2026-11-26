@@ -32,8 +32,10 @@ h2,h3{margin:0 0 8px}.page-title{font-size:1.1rem;margin:4px 0 12px}
 .row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;min-height:56px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);color:inherit;text-decoration:none;width:100%}
 .list.tight .row{border:0;border-radius:0;background:transparent;padding:10px 0}
 .row.static{cursor:default}.row.dim,.dim{opacity:.6}
-.row-main{display:flex;flex-direction:column;align-items:flex-start;gap:2px;min-width:0;text-align:start}
-.row-end{display:flex;flex-direction:column;align-items:flex-end;gap:2px}
+.row-main{display:flex;flex-direction:column;align-items:flex-start;gap:2px;flex:1 1 0;min-width:0;text-align:start;overflow-wrap:break-word;word-break:normal}
+.row-end{display:flex;flex-direction:column;align-items:flex-end;gap:2px;flex:0 1 auto;max-width:52%;text-align:end}
+.balance{display:flex;flex-direction:column;align-items:flex-end;text-align:end;line-height:1.35}
+.balance .small{overflow-wrap:break-word}
 .linkish{background:none;border:0;font:inherit;color:inherit;cursor:pointer;padding:0}
 .chip{display:inline-block;margin-inline-start:6px;padding:1px 8px;border-radius:999px;font-size:.72rem;background:var(--border);color:var(--muted)}
 .chip.warn{background:color-mix(in srgb,var(--warn) 18%,transparent);color:var(--warn)}.chip.bad{background:color-mix(in srgb,var(--danger) 18%,transparent);color:var(--danger)}.chip.ok{background:color-mix(in srgb,var(--in) 18%,transparent);color:var(--in)}
@@ -82,7 +84,8 @@ input[type=date]{-webkit-appearance:none;appearance:none;display:block;text-alig
 @media (min-width:560px){.dates{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media (max-width:380px){.row3{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
-.stat,.kv span,.row-main{overflow-wrap:anywhere}
+.stat{overflow-wrap:anywhere}
+.kv span{overflow-wrap:break-word}
 
 /* ---- app lock ---- */
 .lock{position:fixed;inset:0;z-index:50;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px calc(24px + env(safe-area-inset-right)) calc(24px + env(safe-area-inset-bottom)) 24px;overflow:auto}

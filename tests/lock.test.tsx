@@ -110,3 +110,77 @@ describe('narrow-screen layout guards', () => {
     expect(css).toMatch(/@media \(min-width:560px\)\{\.dates/);
   });
 });
+
+describe('account list rows (long balance labels)', () => {
+  it('keeps a long customer name whole and puts the balance meaning under the amount', async () => {
+    const piece = await S.createUnit(db, 'قطعة');
+    const prod = await S.createProduct(db, { name: 'صنف', baseUnitId: piece, buyPrice: 100, sellPrice: 200, lowStockMilli: 0 });
+    const supp = await S.createParty(db, { kind: 'supplier', name: 'مورد' });
+    const name = 'سوبر ماركت الأمانة والنور للمواد الغذائية بالجملة';
+    const cust = await S.createParty(db, { kind: 'customer', name });
+    await S.postInvoice(db, { kind: 'purchase', partyId: supp, date: '2026-11-01', lines: [{ productId: prod, unitId: piece, qtyMilli: 10000, unitPrice: 100 }] });
+    const s = await S.postInvoice(db, { kind: 'sale', partyId: cust, date: '2026-11-02', paidNow: 1000, lines: [{ productId: prod, unitId: piece, qtyMilli: 5000, unitPrice: 200 }] });
+    const line = (await S.getInvoiceDetail(db, s.id))!.lines[0]!.id as number;
+    await S.postReturn(db, { invoiceId: s.id, date: '2026-11-03', lines: [{ invoiceLineId: line, qtyMilli: 5000 }] }); // customer is now owed money
+    expect(await S.getPartyBalance(db, cust)).toBeLessThan(0);
+    location.hash = '#parties'; const { container } = app();
+    const row = await waitFor(() => { const r = container.querySelector('a.row'); if (!r) throw new Error('no row'); return r as HTMLElement; });
+    expect(row.querySelector('.row-main strong')?.textContent).toBe(name);            // whole name in one text node
+    const bal = row.querySelector('.row-end .balance')!;
+    expect(bal.children[0]?.tagName).toBe('STRONG'); expect(bal.children[1]?.textContent).toContain('دفع مقدماً'); // amount first, long meaning below
+  });
+  it('stylesheet gives the name column priority and never breaks names at every character', () => {
+    const css = readFileSync('src/styles.css', 'utf8');
+    const rule = (sel: string) => (css.match(new RegExp(`${sel.replace(/[.]/g, '\\.')}\\{([^}]*)\\}`)) ?? [])[1] ?? '';
+    expect(rule('.row-main')).toMatch(/flex:1 1 0/); expect(rule('.row-main')).toMatch(/min-width:0/); expect(rule('.row-main')).not.toMatch(/anywhere/);
+    expect(rule('.row-end')).toMatch(/max-width:52%/);
+    expect(css).not.toMatch(/\.row-main[^{]*\{[^}]*overflow-wrap:anywhere/);
+  });
+});
+
+describe('backup page', () => {
+  it('shows the automatic backup written on startup and restores from it (with a safety copy download)', async () => {
+    (URL as unknown as Record<string, unknown>).createObjectURL = vi.fn(() => 'blob:x'); (URL as unknown as Record<string, unknown>).revokeObjectURL = vi.fn();
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    await S.createParty(db, { kind: 'customer', name: 'قبل النسخة' });
+    location.hash = '#more/backup'; app();
+    await waitFor(async () => expect(await S.getSetting(db, 'last_auto_backup_date')).toBeTruthy());       // AutoBackupRunner ran on open
+    await S.createParty(db, { kind: 'customer', name: 'بعد النسخة' });
+    const restoreBtn = await screen.findByText(ar.backup.restoreThis);
+    await userEvent.click(restoreBtn);
+    const dlg = await screen.findByRole('dialog'); await userEvent.click(within(dlg).getByText(ar.backup.confirmRestore));
+    await waitFor(async () => expect((await S.listParties(db)).map(p => p.name)).toEqual(['قبل النسخة']));
+    expect(click).toHaveBeenCalled();                                                                       // safety copy was handed over first
+    expect(await screen.findByText(ar.backup.restoreOk)).toBeTruthy();
+  });
+});
+
+vi.mock('../src/security/biometric', async () => {
+  const actual = await vi.importActual<typeof import('../src/security/biometric')>('../src/security/biometric');
+  return { ...actual, biometricAvailable: vi.fn(async () => true), biometricUnlock: vi.fn(async () => true) };
+});
+describe('biometric unlock (native-only feature, mocked here)', () => {
+  it('prompts automatically when enabled, unlocks on success, and the PIN keypad remains available', async () => {
+    await P.setPin(db, '2468', 1000);
+    const bio = await import('../src/security/biometric'); await bio.setBiometricEnabled(db, true);
+    app();
+    await screen.findByRole('banner');                                  // biometric success opened the app
+    expect(bio.biometricUnlock).toHaveBeenCalled();
+  });
+  it('on biometric failure the lock screen stays and the PIN still works', async () => {
+    await P.setPin(db, '2468', 1000);
+    const bio = await import('../src/security/biometric'); await bio.setBiometricEnabled(db, true);
+    vi.mocked(bio.biometricUnlock).mockResolvedValue(false);
+    app(); await screen.findByRole('dialog');
+    expect(await screen.findByText(ar.lock.bioFailed)).toBeTruthy(); expect(screen.getByText(ar.lock.useBio)).toBeTruthy();
+    await tap('2468'); await screen.findByRole('banner');
+    vi.mocked(bio.biometricUnlock).mockResolvedValue(true);
+  });
+  it('removing the PIN also removes the biometric flag, and it is never in backups', async () => {
+    await P.setPin(db, '2468', 1000);
+    const bio = await import('../src/security/biometric'); await bio.setBiometricEnabled(db, true);
+    expect((await S.createBackup(db)).text).not.toContain('pin_biometric');
+    await P.disablePin(db, '2468');
+    expect(await bio.biometricEnabled(db)).toBe(false);
+  });
+});

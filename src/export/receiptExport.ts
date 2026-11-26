@@ -3,21 +3,15 @@ import { deliverFile, type DeliverKind } from './deliver';
 import { jpegToPdf } from './pdf';
 import { buildReceiptModel } from './receiptModel';
 import { renderReceipt } from './renderReceipt';
+import { canvasToBlob as toBlob, createBrowserCanvas, ensureFonts } from './browser';
 
 export type ExportFormat = 'png' | 'pdf' | 'whatsapp';
-
-async function ensureFonts() {
-  const fonts = (document as Document & { fonts?: FontFaceSet }).fonts; // canvas text needs the bundled Cairo files loaded first
-  if (!fonts) return;
-  await Promise.all(['400', '600', '700'].map(w => fonts.load(`${w} 16px Cairo`, 'ابجد هوز 123 abc')));
-}
-const toBlob = (c: HTMLCanvasElement, type: string, q?: number) => new Promise<Blob>((res, rej) => c.toBlob(b => (b ? res(b) : rej(new Error('canvas export failed'))), type, q));
 
 /** Renders the invoice receipt and delivers it as PNG, PDF, or to WhatsApp (PNG). Works offline. */
 export async function exportReceipt(db: Db, invoiceId: number, format: ExportFormat): Promise<{ kind: DeliverKind; filename: string }> {
   const model = await buildReceiptModel(db, invoiceId);
   await ensureFonts();
-  const canvas = renderReceipt(model, (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }, 2);
+  const canvas = renderReceipt(model, createBrowserCanvas, 2);
   if (format === 'pdf') {
     const jpeg = new Uint8Array(await (await toBlob(canvas, 'image/jpeg', 0.95)).arrayBuffer());
     const filename = `${model.filename}.pdf`;

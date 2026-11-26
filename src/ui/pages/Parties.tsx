@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { exportStatementPdf } from '../../export/documentExport';
 import { ar } from '../../i18n/ar';
 import { archiveParty, createParty, getInvoiceState, getParty, listInvoices, listParties, partyStatement, updateParty, type PartyRow } from '../../services';
 import type { PartyKind } from '../../domain/ledger';
@@ -55,7 +56,7 @@ export function PartiesPage() {
       {data && data.length === 0 && <Empty title={kind === 'customer' ? ar.party.emptyCustomers : ar.party.emptySuppliers} hint={ar.party.emptyHint} />}
       <ul className="list">
         {data?.map(p => (
-          <li key={p.id}><a className="row" href={`#parties/${p.id}`}><span className="row-main"><strong>{p.name}</strong>{p.phone && <span className="muted small">{p.phone}</span>}</span><BalanceTag kind={p.kind} balance={p.balance} /></a></li>
+          <li key={p.id}><a className="row" href={`#parties/${p.id}`}><span className="row-main"><strong>{p.name}</strong>{p.phone && <span className="muted small">{p.phone}</span>}</span><span className="row-end"><BalanceTag kind={p.kind} balance={p.balance} /></span></a></li>
         ))}
       </ul>
       <Fab label={kind === 'customer' ? ar.party.addCustomer : ar.party.addSupplier} onClick={() => setAdding(true)} />
@@ -75,6 +76,8 @@ export function PartyDetail({ id }: { id: number }) {
     const states = await Promise.all(inv.slice(0, 100).map(async i => ({ i, s: await getInvoiceState(db, i.id) })));
     return states.filter(x => x.s && x.s.outstanding > 0).map(x => ({ id: x.i.id, ref: x.i.ref, outstanding: x.s!.outstanding }));
   }, [id]);
+  const [xnote, setXnote] = useState(''); const [xerr, setXerr] = useState(''); const [xbusy, setXbusy] = useState(false);
+  const doExport = async (mode: 'save' | 'whatsapp') => { setXbusy(true); setXerr(''); setXnote(ar.share.preparing); try { const r = await exportStatementPdf(db, id, from, to, mode); setXnote(r.kind === 'whatsapp-opened' ? ar.share.waOpened : r.kind === 'downloaded' ? ar.share.downloaded : r.kind === 'shared' ? ar.share.shared : ''); } catch (e) { setXnote(''); setXerr(ar.share.failed + ': ' + errText(e)); } finally { setXbusy(false); } };
   const refresh = () => { party.reload(); stmt.reload(); open.reload(); };
   const p = party.data;
   if (party.error) return <ErrorBox message={party.error} />;
@@ -98,6 +101,8 @@ export function PartyDetail({ id }: { id: number }) {
       <section className="card">
         <h3>{ar.party.statement}</h3>
         <div className="dates"><Field label={ar.common.from}><input type="date" value={from} onChange={e => setFrom(e.target.value)} /></Field><Field label={ar.common.to}><input type="date" value={to} onChange={e => setTo(e.target.value)} /></Field></div>
+        <div className="actions"><button className="btn ghost small" disabled={xbusy} onClick={() => void doExport('save')}>{ar.reports.statementPdf}</button><button className="btn wa small" disabled={xbusy} onClick={() => void doExport('whatsapp')}>{ar.share.whatsapp}</button></div>
+        {xnote && <p className="muted" role="status">{xnote}</p>}<ErrorBox message={xerr} />
         <ErrorBox message={stmt.error} />
         {stmt.data && (
           <ul className="list tight">

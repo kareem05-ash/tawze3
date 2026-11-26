@@ -8,7 +8,6 @@ import { SqlJsDb } from '../src/db/sqljsAdapter';
 import { migrate } from '../src/db/migrate';
 import { MIGRATIONS } from '../src/db/migrations';
 import * as S from '../src/services';
-import App from '../src/App';
 import { DbProvider } from '../src/ui/DbProvider';
 import { ThemeProvider } from '../src/ui/theme';
 import { Shell } from '../src/ui/Shell';

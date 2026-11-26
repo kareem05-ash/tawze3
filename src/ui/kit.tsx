@@ -49,7 +49,8 @@ export function Fab({ label, onClick }: { label: string; onClick: () => void }) 
 export function BalanceTag({ kind, balance }: { kind: PartyKind; balance: number }) {
   const s = balanceState(balance);
   const cls = s === 'settled' ? 'muted' : s === 'owes_us' ? 'amt-in' : 'amt-out';
-  return <span className={`balance ${cls}`}><strong>{s === 'settled' ? '' : money(Math.abs(balance))}</strong> <span className="small">{balanceLabelAr(kind, balance)}</span></span>;
+  // amount on its own line, meaning below it: a long label wraps under the amount instead of squeezing the party name
+  return <span className={`balance ${cls}`}>{s !== 'settled' && <strong>{money(Math.abs(balance))}</strong>}<span className="small">{balanceLabelAr(kind, balance)}</span></span>;
 }
 
 /** Small inline "create new" control used for categories, units and parties without leaving the form. */

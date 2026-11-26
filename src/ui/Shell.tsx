@@ -7,7 +7,9 @@ import { InvoiceDetail, InvoiceForm, InvoiceList } from './pages/Invoices';
 import { PartiesPage, PartyDetail } from './pages/Parties';
 import { ProductsPage } from './pages/Products';
 import { ReportsPage } from './pages/Reports';
-import { BackupPage, MorePage, SettingsPage } from './pages/More';
+import { MorePage, SettingsPage } from './pages/More';
+import { BackupPage } from './pages/Backup';
+import { AutoBackupRunner } from './AutoBackupRunner';
 
 type Tab = 'home' | 'sales' | 'purchases' | 'parties' | 'more';
 const TABS: { id: Tab; icon: LucideIcon }[] = [
@@ -36,6 +38,7 @@ export function Shell() {
   const back = () => { if (history.length > 1) history.back(); else location.hash = tab; };
   return (
     <div className="app">
+      <AutoBackupRunner />
       <header className="topbar">
         {route.length > 1 ? <button className="icon-btn" onClick={back} aria-label={ar.common.back}><ArrowRight size={22} /></button> : <span className="icon-btn" aria-hidden />}
         <h1>{ar.appName}</h1>

@@ -1,4 +1,7 @@
 import { useState } from 'react';
+import { exportReportPdf } from '../../export/documentExport';
+import { useReadyDb } from '../DbProvider';
+import { errText } from '../kit';
 import { ar } from '../../i18n/ar';
 import { buildReport, productReport, type ProductReportRow } from '../../services';
 import type { Change } from '../../domain/metrics';
@@ -28,6 +31,8 @@ export function ReportsPage() {
   const [from, setFrom] = useState(monthStartIso()); const [to, setTo] = useState(todayIso());
   const rep = useLoad(db => buildReport(db, from, to), [from, to]);
   const prod = useLoad(db => productReport(db, from, to), [from, to]);
+  const { db } = useReadyDb(); const [busy, setBusy] = useState(false); const [note, setNote] = useState(''); const [xerr, setXerr] = useState('');
+  const doExport = async (mode: 'save' | 'whatsapp') => { setBusy(true); setXerr(''); setNote(ar.share.preparing); try { const r = await exportReportPdf(db, from, to, mode); setNote(r.kind === 'whatsapp-opened' ? ar.share.waOpened : r.kind === 'downloaded' ? ar.share.downloaded : r.kind === 'shared' ? ar.share.shared : ''); } catch (e) { setNote(''); setXerr(ar.share.failed + ': ' + errText(e)); } finally { setBusy(false); } };
   const t = todayIso();
   const presets: { label: string; f: string; to: string }[] = [
     { label: ar.reports.today, f: t, to: t }, { label: ar.reports.yesterday, f: addDays(t, -1), to: addDays(t, -1) },
@@ -39,6 +44,8 @@ export function ReportsPage() {
       <h2 className="page-title">{ar.reports.title}</h2>
       <div className="actions">{presets.map(p => <button key={p.label} className={`btn small ${from === p.f && to === p.to ? '' : 'ghost'}`} onClick={() => { setFrom(p.f); setTo(p.to); }}>{p.label}</button>)}</div>
       <div className="dates"><Field label={ar.common.from}><input type="date" value={from} max={to} onChange={e => e.target.value && setFrom(e.target.value)} /></Field><Field label={ar.common.to}><input type="date" value={to} min={from} onChange={e => e.target.value && setTo(e.target.value)} /></Field></div>
+      <div className="actions"><button className="btn ghost" disabled={busy} onClick={() => void doExport('save')}>{ar.reports.exportPdf}</button><button className="btn wa" disabled={busy} onClick={() => void doExport('whatsapp')}>{ar.share.whatsapp}</button></div>
+      {note && <p className="muted" role="status">{note}</p>}<ErrorBox message={xerr} />
       <ErrorBox message={rep.error ?? prod.error} />
       {r && ch && (
         <>

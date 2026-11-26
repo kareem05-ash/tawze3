@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { ar } from '../i18n/ar';
 import { hasPin, pinLength, verifyPin, setPin, changePin, disablePin, isValidPin, normalizePin } from '../security/pin';
+import { biometricAvailable, biometricEnabled, biometricUnlock } from '../security/biometric';
 import { useReadyDb } from './DbProvider';
 import { ErrorBox, Field, Sheet, errText } from './kit';
 
@@ -12,7 +13,10 @@ const AR = '٠١٢٣٤٥٦٧٨٩';
 function LockScreen({ onUnlock }: { onUnlock: () => void }) {
   const { db } = useReadyDb();
   const [len, setLen] = useState(4); const [digits, setDigits] = useState(''); const typed = useRef(''); const [msg, setMsg] = useState(''); const [until, setUntil] = useState(0); const [now, setNow] = useState(Date.now()); const [busy, setBusy] = useState(false);
+  const [bio, setBio] = useState(false);
+  const tryBio = useCallback(async () => { if (await biometricUnlock(ar.lock.bioReason, ar.lock.bioCancel)) onUnlock(); else setMsg(ar.lock.bioFailed); }, [onUnlock]);
   useEffect(() => { void pinLength(db).then(setLen); }, [db]);
+  useEffect(() => { void (async () => { if ((await biometricEnabled(db)) && (await biometricAvailable())) { setBio(true); void tryBio(); } })(); }, [db, tryBio]);
   useEffect(() => { if (until <= Date.now()) return; const t = setInterval(() => { setNow(Date.now()); if (Date.now() >= until) { setUntil(0); setMsg(''); } }, 500); return () => clearInterval(t); }, [until]);
   const waiting = until > now;
 
@@ -46,6 +50,7 @@ function LockScreen({ onUnlock }: { onUnlock: () => void }) {
         <span /><button className="key" aria-label="0" disabled={waiting} onClick={() => press('0')}>{AR[0]}</button>
         <button className="key plain" onClick={erase}>{ar.lock.del}</button>
       </div>
+      {bio && <button className="btn ghost" onClick={() => void tryBio()}>{ar.lock.useBio}</button>}
     </div>
   );
 }

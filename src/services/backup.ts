@@ -88,3 +88,17 @@ export async function restoreBackup(db: Db, text: string, saveSafetyCopy: (curre
 
 export async function markBackupDone(db: Db, when = new Date()) { await setSetting(db, 'last_backup_at', when.toISOString()); }
 export async function lastBackupAt(db: Db): Promise<string | undefined> { return (await one<{ value: string }>(db, "SELECT value FROM settings WHERE key = 'last_backup_at'"))?.value; }
+
+import { decryptBackup, encryptBackup, isEncryptedBackup } from './backupCrypto';
+/** Plain or passphrase-encrypted backup text. */
+export async function createBackupFile(db: Db, opts: { passphrase?: string } = {}, now = new Date()): Promise<{ text: string; summary: BackupSummary; encrypted: boolean }> {
+  const { text, summary } = await createBackup(db, now);
+  return opts.passphrase ? { text: await encryptBackup(text, opts.passphrase), summary, encrypted: true } : { text, summary, encrypted: false };
+}
+/** Returns the plain backup text, decrypting when needed. Throws BACKUP_NEEDS_PASSPHRASE when encrypted and no passphrase was given. */
+export async function openBackupText(text: string, passphrase?: string): Promise<string> {
+  if (!isEncryptedBackup(text)) return text;
+  if (!passphrase) throw new ServiceError('BACKUP_NEEDS_PASSPHRASE', 'هذه النسخة مشفّرة. أدخل كلمة السر.');
+  return decryptBackup(text, passphrase);
+}
+export { isEncryptedBackup };

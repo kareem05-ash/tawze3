@@ -8,3 +8,5 @@ android/.gradle/
 *.sqlite
 .env
 local.properties
+
+android/keystore.properties

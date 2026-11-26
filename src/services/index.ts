@@ -9,3 +9,4 @@ export * from './adjustments';
 export * from './settings';
 export * from './backup';
 export * from './reports';
+export * from './autoBackup';
