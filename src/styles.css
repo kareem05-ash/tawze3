@@ -94,3 +94,10 @@ input[type=date]{-webkit-appearance:none;appearance:none;display:block;text-alig
 .key{width:76px;height:76px;border-radius:50%;border:1px solid var(--border);background:var(--surface);color:var(--text);font:inherit;font-size:1.6rem;cursor:pointer}
 .key:active{background:var(--border)}.key.plain{border-color:transparent;background:transparent;font-size:.95rem}
 .key:disabled{opacity:.4}
+
+/* ---- payment sheet ---- */
+.amount-input{font-size:1.6rem;min-height:60px;text-align:center;font-weight:700}
+.due-row{display:flex;justify-content:space-between;align-items:center;gap:8px;margin:0 0 10px;flex-wrap:wrap}
+.preview{border:1px solid var(--border);border-radius:12px;padding:8px 12px;margin-bottom:10px;background:var(--surface)}
+.preview .kv{padding:6px 0;border-bottom:1px solid var(--border)}.preview .kv:last-of-type{border:0}
+.quiet-row{margin:6px 0}

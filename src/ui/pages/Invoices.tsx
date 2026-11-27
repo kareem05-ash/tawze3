@@ -1,18 +1,19 @@
 import { useMemo, useState } from 'react';
 import { ar } from '../../i18n/ar';
 import {
-  ServiceError, cancelInvoice, createParty, getInvoiceDetail, getInvoiceState, getSetting, listAllProductUnits, listInvoices, listParties, listProducts,
+  ServiceError, cancelInvoice, getInvoiceDetail, getInvoiceState, getSetting, listAllProductUnits, listInvoices, listParties, listProducts,
   postInvoice, postReturn, replaceInvoice, type InvoiceIn, type InvoiceLineIn,
 } from '../../services';
 import { computeInvoice } from '../../domain/invoice';
 import { lineTotal } from '../../domain/money';
 import { useReadyDb } from '../DbProvider';
 import { useLoad, go } from '../hooks';
-import { ConfirmDialog, Empty, ErrorBox, Fab, Field, InlineAdd, Sheet, errText } from '../kit';
+import { ConfirmDialog, Empty, ErrorBox, Fab, Field, Sheet, errText } from '../kit';
 import { dateLabel, milliToInput, minorToInput, money, qty, toMilli, toMinor, todayIso } from '../format';
 import { exportReceipt, type ExportFormat } from '../../export/receiptExport';
 import { PaymentSheet } from './PaymentSheet';
 import { ProductForm } from './Products';
+import { PartyForm } from './Parties';
 
 type Kind = 'sale' | 'purchase';
 const route = (k: Kind) => (k === 'sale' ? 'sales' : 'purchases');
@@ -54,7 +55,7 @@ export function InvoiceForm({ kind, partyId, replaceId }: { kind: Kind; partyId?
   const [party, setParty] = useState(partyId ? String(partyId) : ''); const [date, setDate] = useState(todayIso());
   const [lines, setLines] = useState<LineState[]>([blankLine()]); const [disc, setDisc] = useState(''); const [paid, setPaid] = useState('');
   const [ext, setExt] = useState(''); const [notes, setNotes] = useState(''); const [err, setErr] = useState(''); const [busy, setBusy] = useState(false);
-  const [quick, setQuick] = useState<number | null>(null); const [override, setOverride] = useState<string | null>(null); const [prefilled, setPrefilled] = useState(!replaceId);
+  const [newParty, setNewParty] = useState(false); const [quick, setQuick] = useState<number | null>(null); const [override, setOverride] = useState<string | null>(null); const [prefilled, setPrefilled] = useState(!replaceId);
 
   useLoad(async d => {
     if (!replaceId) return 0;
@@ -121,7 +122,7 @@ export function InvoiceForm({ kind, partyId, replaceId }: { kind: Kind; partyId?
       <section className="card">
         <Field label={kind === 'sale' ? ar.invoice.customer : ar.invoice.supplier}>
           <div className="with-add"><select value={party} onChange={e => setParty(e.target.value)}><option value="">{ar.invoice.pickParty}</option>{parties.data?.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
-            <InlineAdd placeholder={ar.invoice.newPartyName} onCreate={async n => { const id = await createParty(db, { kind: kind === 'sale' ? 'customer' : 'supplier', name: n }); parties.reload(); setParty(String(id)); }} /></div>
+            <button type="button" className="link" onClick={() => setNewParty(true)}>{ar.common.newItem}</button></div>
         </Field>
         <Field label={ar.common.date}><input type="date" value={date} onChange={e => setDate(e.target.value)} /></Field>
       </section>
@@ -159,6 +160,7 @@ export function InvoiceForm({ kind, partyId, replaceId }: { kind: Kind; partyId?
         <ErrorBox message={err} />
         <button className="btn block" disabled={busy} onClick={() => void submit()}>{ar.common.save}</button>
       </section>
+      {newParty && <PartyForm kind={kind === 'sale' ? 'customer' : 'supplier'} onClose={() => setNewParty(false)} onDone={id => { setNewParty(false); parties.reload(); setParty(String(id)); }} />}
       {quick !== null && <ProductForm onClose={() => setQuick(null)} onDone={id => void onProductCreated(quick, id)} />}
       {override && <ConfirmDialog title={ar.invoice.overrideTitle} message={`${override}. ${ar.invoice.overrideAsk}`} confirmLabel={ar.invoice.overrideYes} danger onCancel={() => setOverride(null)} onConfirm={() => { setOverride(null); void submit(true); }} />}
     </>
@@ -247,7 +249,7 @@ export function InvoiceDetail({ id, kind }: { id: number; kind: Kind }) {
           {st.returned === 0 && <button className="btn ghost" onClick={() => go(`${route(kind)}/edit/${id}`)}>{ar.common.edit}</button>}
           {st.returned === 0 && <button className="btn danger ghost" onClick={() => setSheet('cancel')}>{ar.invoice.cancel}</button>}
         </div>)}
-      {sheet === 'pay' && <PaymentSheet partyId={st.partyId} kind={kind === 'sale' ? 'customer' : 'supplier'} invoiceId={id} suggested={st.outstanding} onClose={() => setSheet(null)} onDone={done} />}
+      {sheet === 'pay' && <PaymentSheet partyId={st.partyId} kind={kind === 'sale' ? 'customer' : 'supplier'} invoiceId={id} suggested={st.outstanding} onClose={() => setSheet(null)} onDone={m => { setSheet(null); setNote(m); reload(); }} />}
       {sheet === 'ret' && <ReturnSheet invoiceId={id} kind={kind} onClose={() => setSheet(null)} onDone={done} />}
       {sheet === 'cancel' && <ConfirmDialog title={ar.invoice.cancel} danger message={`${ar.invoice.cancelConfirm}${activePays.length ? ' ' + ar.invoice.cancelWithPayments : ''}`}
         onCancel={() => setSheet(null)} onConfirm={async () => { try { await cancelInvoice(db, id, { cancelPayments: true }); done(); } catch (e) { setSheet(null); setErr(errText(e)); } }} />}

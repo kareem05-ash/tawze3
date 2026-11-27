@@ -81,6 +81,7 @@ export async function restoreBackup(db: Db, text: string, saveSafetyCopy: (curre
       const sql = `INSERT INTO ${q(t)}(${d.columns.map(q).join(',')}) VALUES (${d.columns.map(() => '?').join(',')})`;
       for (const r of d.rows) await tx.run(sql, r);
     }
+    await tx.run("UPDATE payment_allocations SET kind = 'invoice' WHERE invoice_id IS NOT NULL AND kind <> 'invoice'"); // backups made before schema v3 have no `kind`
     for (const k of keepPin) await tx.run('INSERT OR REPLACE INTO settings(key, value) VALUES (?, ?)', [k.key, k.value]); // restoring data must not remove or change the lock
   });
   return summary;

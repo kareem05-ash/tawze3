@@ -1,42 +1,66 @@
 import { useState } from 'react';
 import { ar } from '../../i18n/ar';
-import { recordPayment } from '../../services';
+import { previewPayment, recordPayment } from '../../services';
 import type { PartyKind } from '../../domain/ledger';
 import { useReadyDb } from '../DbProvider';
+import { useLoad } from '../hooks';
 import { ErrorBox, Field, Sheet, errText } from '../kit';
-import { minorToInput, money, toMinor, todayIso } from '../format';
+import { dateLabel, minorToInput, money, toMinor, todayIso } from '../format';
 
-export function PaymentSheet({ partyId, kind, invoiceId, suggested, invoices, onDone, onClose }: {
-  partyId: number; kind: PartyKind; invoiceId?: number; suggested?: number;
-  invoices?: { id: number; ref: string; outstanding: number }[]; onDone: () => void; onClose: () => void;
+/**
+ * One amount, one button. The money covers the OLDEST open bills first (the sheet shows exactly which ones before saving).
+ * Opened from an invoice, that invoice is paid first and the rest continues oldest-first.
+ */
+export function PaymentSheet({ partyId, kind, invoiceId, suggested, onDone, onClose }: {
+  partyId: number; kind: PartyKind; invoiceId?: number; suggested?: number; onDone: (message: string) => void; onClose: () => void;
 }) {
   const { db } = useReadyDb();
   const [amount, setAmount] = useState(suggested ? minorToInput(suggested) : '');
-  const [date, setDate] = useState(todayIso());
-  const [inv, setInv] = useState<string>(invoiceId ? String(invoiceId) : '');
-  const [notes, setNotes] = useState('');
+  const [date, setDate] = useState(todayIso()); const [editDate, setEditDate] = useState(false);
+  const [notes, setNotes] = useState(''); const [editNotes, setEditNotes] = useState(false);
   const [err, setErr] = useState(''); const [busy, setBusy] = useState(false);
+  const minor = amount.trim() ? toMinor(amount) : 0;
+  const valid = minor !== null && minor > 0;
+  const preview = useLoad(d => previewPayment(d, partyId, valid ? minor : 0, invoiceId), [partyId, valid ? minor : 0, invoiceId]);
+  const pv = preview.data;
+
   const save = async () => {
-    const a = toMinor(amount);
-    if (a === null || a <= 0) { setErr(ar.common.required + ': ' + ar.common.amount); return; }
+    if (!valid) { setErr(`${ar.common.required}: ${ar.common.amount}`); return; }
     setBusy(true);
-    try { await recordPayment(db, { partyId, amount: a, date, invoiceId: inv ? Number(inv) : undefined, notes: notes || undefined }); onDone(); }
-    catch (e) { setErr(errText(e)); } finally { setBusy(false); }
+    try {
+      const r = await recordPayment(db, { partyId, amount: minor, date, invoiceId, notes: notes.trim() || undefined });
+      onDone(`${ar.payment.done} (${r.ref})${r.advance > 0 ? ` · ${money(r.advance)} ${ar.payment.savedAdvance}` : ''}`);
+    } catch (e) { setErr(errText(e)); } finally { setBusy(false); }
   };
   return (
     <Sheet title={kind === 'customer' ? ar.payment.receiveTitle : ar.payment.payTitle} onClose={onClose}
-      footer={<><button className="btn ghost" onClick={onClose}>{ar.common.cancel}</button><button className="btn" disabled={busy} onClick={() => void save()}>{ar.common.save}</button></>}>
-      <Field label={ar.common.amount}><input inputMode="decimal" autoFocus value={amount} onChange={e => setAmount(e.target.value)} /></Field>
-      <Field label={ar.common.date}><input type="date" value={date} onChange={e => setDate(e.target.value)} /></Field>
-      {(invoices?.length ?? 0) > 0 && (
-        <Field label={ar.payment.against} hint={ar.payment.advanceNote}>
-          <select value={inv} onChange={e => setInv(e.target.value)}>
-            <option value="">{ar.payment.general}</option>
-            {invoices!.map(i => <option key={i.id} value={i.id}>{i.ref} — {ar.invoice.outstanding} {money(i.outstanding)}</option>)}
-          </select>
-        </Field>
+      footer={<><button className="btn ghost" onClick={onClose}>{ar.common.cancel}</button><button className="btn" disabled={busy || !valid} onClick={() => void save()}>{kind === 'customer' ? ar.payment.receiveBtn : ar.payment.payBtn}</button></>}>
+      <Field label={ar.common.amount}>
+        <input className="amount-input" inputMode="decimal" autoFocus placeholder="0" value={amount} onChange={e => { setAmount(e.target.value); setErr(''); }} onKeyDown={e => e.key === 'Enter' && void save()} />
+      </Field>
+      {pv && pv.totalDue > 0 && (
+        <p className="due-row"><span>{ar.payment.due}: <strong>{money(pv.totalDue)}</strong></span>
+          <button type="button" className="link" onClick={() => setAmount(minorToInput(pv.totalDue))}>{ar.payment.payAll}</button></p>
       )}
-      <Field label={ar.common.notes}><input value={notes} onChange={e => setNotes(e.target.value)} /></Field>
+      {invoiceId !== undefined && <p className="muted small">{ar.payment.forInvoice}</p>}
+      {valid && pv && (
+        <div className="preview" aria-label={ar.payment.order}>
+          {pv.lines.length === 0 && <p className="muted small">{ar.payment.nothingDue}</p>}
+          {pv.lines.map((l, i) => (
+            <div key={i} className="kv"><span>{l.kind === 'opening' ? ar.payment.opening : `${ar.payment.invoiceWord} ${l.ref}`}</span>
+              <strong className={l.fullyPaid ? 'amt-in' : ''}>{money(l.applied)} · {l.fullyPaid ? ar.payment.fullyPaid : `${ar.payment.left} ${money(l.remainingAfter)}`}</strong></div>
+          ))}
+          {pv.advance > 0 && pv.lines.length > 0 && <p className="muted small">{ar.payment.advance} {money(pv.advance)}: {ar.payment.advanceNote}</p>}
+        </div>
+      )}
+      <div className="quiet-row">
+        {editDate ? <Field label={ar.common.date}><input type="date" value={date} onChange={e => e.target.value && setDate(e.target.value)} /></Field>
+          : <span className="muted">{ar.common.date}: {date === todayIso() ? ar.payment.today : dateLabel(date)} <button type="button" className="link" onClick={() => setEditDate(true)}>{ar.payment.change}</button></span>}
+      </div>
+      <div className="quiet-row">
+        {editNotes ? <Field label={ar.common.notes}><input value={notes} onChange={e => setNotes(e.target.value)} /></Field>
+          : <button type="button" className="link" onClick={() => setEditNotes(true)}>{ar.payment.addNote}</button>}
+      </div>
       <ErrorBox message={err} />
     </Sheet>
   );

@@ -184,3 +184,68 @@ describe('biometric unlock (native-only feature, mocked here)', () => {
     expect(await bio.biometricEnabled(db)).toBe(false);
   });
 });
+
+describe('simpler payments and one add-account flow', () => {
+  const seedInvoices = async () => {
+    const piece = await S.createUnit(db, 'قطعة');
+    const prod = await S.createProduct(db, { name: 'صنف', baseUnitId: piece, buyPrice: 100, sellPrice: 150, lowStockMilli: 0 });
+    const supp = await S.createParty(db, { kind: 'supplier', name: 'مورد' });
+    const cust = await S.createParty(db, { kind: 'customer', name: 'العميل س', phone: '01012345678' });
+    await S.postInvoice(db, { kind: 'purchase', partyId: supp, date: '2026-11-01', lines: [{ productId: prod, unitId: piece, qtyMilli: 100000, unitPrice: 100 }] });
+    const mk = (d: string) => S.postInvoice(db, { kind: 'sale', partyId: cust, date: d, lines: [{ productId: prod, unitId: piece, qtyMilli: 1000, unitPrice: 15000 }] });
+    return { cust, a: await mk('2026-11-02'), b: await mk('2026-11-03') };
+  };
+
+  it('customer pays 200 on account: the oldest 150 invoice is settled and the newer one shows 100 (preview first, then save)', async () => {
+    const { cust, a, b } = await seedInvoices();
+    location.hash = `#parties/${cust}`; app();
+    await userEvent.click(await screen.findByText(ar.payment.receive));
+    const dlg = await screen.findByRole('dialog');
+    expect(within(dlg).queryByRole('combobox')).toBeNull();                     // no invoice picker: nothing to choose
+    await userEvent.type(within(dlg).getAllByRole('textbox')[0]!, '200');
+    const preview = await within(dlg).findByLabelText(ar.payment.order);
+    expect(preview.textContent).toContain(a.ref); expect(preview.textContent).toContain(ar.payment.fullyPaid); expect(preview.textContent).toContain(b.ref);
+    await userEvent.click(within(dlg).getByText(ar.payment.receiveBtn));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect((await S.getInvoiceState(db, a.id))!.outstanding).toBe(0);
+    expect((await S.getInvoiceState(db, b.id))!.outstanding).toBe(10000);
+    expect(await S.getPartyBalance(db, cust)).toBe(10000);
+    expect(await screen.findByText(new RegExp(ar.payment.done))).toBeTruthy();
+  });
+  it('"pay everything due" fills the full amount', async () => {
+    const { cust } = await seedInvoices();
+    location.hash = `#parties/${cust}`; app();
+    await userEvent.click(await screen.findByText(ar.payment.receive));
+    const dlg = await screen.findByRole('dialog');
+    await userEvent.click(await within(dlg).findByText(ar.payment.payAll));
+    expect((within(dlg).getAllByRole('textbox')[0] as HTMLInputElement).value).toBe('300');
+  });
+  it('adding a customer from a sale uses the same full form as the Accounts screen and selects the new account', async () => {
+    location.hash = '#sales/new'; app();
+    const sel = (await screen.findAllByRole('combobox'))[0]!;
+    await userEvent.click(screen.getAllByText(ar.common.newItem)[0]!);
+    const dlg = await screen.findByRole('dialog');
+    expect(within(dlg).getByRole('heading', { name: ar.party.addCustomer })).toBeTruthy();
+    expect(within(dlg).getByText(ar.party.opening)).toBeTruthy();                // same fields: opening balance etc.
+    expect(within(dlg).getAllByRole('textbox').length).toBeGreaterThanOrEqual(4);
+    await userEvent.type(within(dlg).getAllByRole('textbox')[0]!, 'عميل من الفاتورة');
+    await userEvent.type(within(dlg).getAllByRole('textbox')[1]!, '01099998888');
+    await userEvent.click(within(dlg).getByText(ar.common.save));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    const created = (await S.listParties(db, { kind: 'customer' })).find(p => p.name === 'عميل من الفاتورة')!;
+    expect(created.phone).toBe('01099998888');
+    await waitFor(() => expect((sel as HTMLSelectElement).value).toBe(String(created.id)));
+  });
+  it('same for a supplier in a purchase', async () => {
+    location.hash = '#purchases/new'; app();
+    await screen.findAllByRole('combobox'); await userEvent.click(screen.getAllByText(ar.common.newItem)[0]!);
+    expect(within(await screen.findByRole('dialog')).getByRole('heading', { name: ar.party.addSupplier })).toBeTruthy();
+  });
+  it('paying from an invoice starts with that invoice and shows it in the preview', async () => {
+    const { b } = await seedInvoices();
+    location.hash = `#sales/${b.id}`; app();
+    await userEvent.click(await screen.findByText(ar.invoice.addPayment));
+    const dlg = await screen.findByRole('dialog');
+    expect((await within(dlg).findByLabelText(ar.payment.order)).textContent).toContain(b.ref);   // suggested amount = this invoice
+  });
+});

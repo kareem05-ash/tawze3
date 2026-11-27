@@ -43,11 +43,11 @@ describe('sales', () => {
     await S.recordPayment(db, { partyId: cust, amount: 1500, date: D, invoiceId: r.id });
     expect(await bal(cust)).toBe(3500);
     expect((await S.getInvoiceState(db, r.id))?.outstanding).toBe(3500);
-    await S.recordPayment(db, { partyId: cust, amount: 500, date: D }); // general: balance only
+    await S.recordPayment(db, { partyId: cust, amount: 500, date: D }); // no invoice chosen: covers the oldest open bill
     expect(await bal(cust)).toBe(3000);
-    expect((await S.getInvoiceState(db, r.id))?.outstanding).toBe(3500);
+    expect((await S.getInvoiceState(db, r.id))?.outstanding).toBe(3000);
     const over = await S.recordPayment(db, { partyId: cust, amount: 5000, date: D, invoiceId: r.id });
-    expect(over).toMatchObject({ appliedToInvoice: 3500, advance: 1500 });
+    expect(over).toMatchObject({ appliedToInvoices: 3000, advance: 2000 });
     expect(await bal(cust)).toBe(-2000); // advance: business now owes the customer
     expect(await code(S.recordPayment(db, { partyId: cust, amount: 1, date: D, invoiceId: r.id }))).toBe('NOTHING_OUTSTANDING');
     expect((await S.cashTotals(db, D, D)).received).toBe(2000 + 1500 + 500 + 5000);

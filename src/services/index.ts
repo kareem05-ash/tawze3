@@ -10,3 +10,4 @@ export * from './settings';
 export * from './backup';
 export * from './reports';
 export * from './autoBackup';
+export * from './settlement';

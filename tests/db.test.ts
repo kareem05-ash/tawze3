@@ -60,6 +60,21 @@ describe('upgrade from schema v1', () => {
   });
 });
 
+describe('upgrade to schema v3 (allocation kind)', () => {
+  it('existing allocations keep their meaning', async () => {
+    const db = await SqlJsDb.open();
+    await migrate(db, MIGRATIONS.slice(0, 2));
+    await seed(db);
+    await db.run("INSERT INTO parties(kind,name) VALUES ('customer','عميل')");
+    await db.run("INSERT INTO invoices(kind,ref,party_id,date,subtotal,total) VALUES ('sale','S-000001',1,'2026-01-01',500,500)");
+    await db.run("INSERT INTO payments(ref,party_id,direction,amount,date) VALUES ('RC-000001',1,'in',700,'2026-01-02')");
+    await db.run("INSERT INTO payment_allocations(payment_id,invoice_id,amount) VALUES (1,1,500)");
+    await db.run("INSERT INTO payment_allocations(payment_id,invoice_id,amount) VALUES (1,NULL,200)");
+    await migrate(db, MIGRATIONS);
+    expect(await db.all("SELECT invoice_id, amount, kind FROM payment_allocations ORDER BY amount DESC")).toEqual([{ invoice_id: 1, amount: 500, kind: 'invoice' }, { invoice_id: null, amount: 200, kind: 'advance' }]);
+  });
+});
+
 describe('persistence & integrity', () => {
   it('records survive a simulated restart (export, reopen)', async () => {
     const a = await SqlJsDb.open();

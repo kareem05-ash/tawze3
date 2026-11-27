@@ -4,6 +4,7 @@ import { makeMovement } from '../domain/inventory';
 import type { Minor, QtyMilli } from '../domain/money';
 import { ServiceError, assertInt, assertIsoDate, nextRef, one } from './common';
 import { getStock } from './queries';
+import { settleParty } from './settlement';
 
 export interface ReturnLineIn { invoiceLineId: number; qtyMilli: QtyMilli; usable?: boolean }
 export interface ReturnIn { invoiceId: number; date: string; lines: ReturnLineIn[]; notes?: string }
@@ -67,6 +68,7 @@ export async function postReturn(db: Db, input: ReturnIn): Promise<{ id: number;
     const type = isCustomer ? 'sale_return' : 'purchase_return';
     await tx.run("INSERT INTO ledger_entries(party_id, type, delta, date, source_table, source_id) VALUES (?,?,?,?, 'returns', ?)",
       [inv.party_id, type, entryDelta({ type, amount: total, date: input.date }), input.date, id]);
+    await settleParty(tx, inv.party_id); // a return on a paid invoice frees money that now pays the next bill
     return { id, ref, total };
   });
 }

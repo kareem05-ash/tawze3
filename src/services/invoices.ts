@@ -5,6 +5,7 @@ import { entryDelta } from '../domain/ledger';
 import { lineTotal, type Minor, type QtyMilli } from '../domain/money';
 import { ServiceError, assertInt, assertIsoDate, nextRef, one } from './common';
 import { cancelPaymentTx, insertPayment } from './payments';
+import { addAllocation, reduceAllocation, settleParty } from './settlement';
 import { getStock } from './queries';
 
 export interface InvoiceLineIn { productId: number; unitId: number; qtyMilli: QtyMilli; unitPrice: Minor; lineDiscount?: Minor }
@@ -87,6 +88,7 @@ export async function postInvoiceTx(tx: Db, input: InvoiceIn): Promise<PostedInv
     await insertPayment(tx, { partyId: input.partyId, direction: input.kind === 'sale' ? 'in' : 'out', amount: paidNow, date: input.date, method: 'cash',
       allocations: [{ invoiceId: id, amount: split.paid }, { invoiceId: null, amount: split.overpaymentAdvance }] });
   }
+  await settleParty(tx, input.partyId); // prepaid credit / overpayment now covers the oldest open bills
   return { id, ref, total: totals.total, paid: split.paid, outstanding: split.outstanding, advance: split.overpaymentAdvance, negativeStockOverride: override };
 }
 export const postInvoice = (db: Db, input: InvoiceIn) => db.transaction(tx => postInvoiceTx(tx, input));
@@ -94,15 +96,26 @@ export const postInvoice = (db: Db, input: InvoiceIn) => db.transaction(tx => po
 export interface CancelOptions { cancelPayments?: boolean; skipStockCheck?: boolean }
 /** Voids an invoice via reversal rows (stock + ledger), dated like the original so history stays consistent. Nothing is deleted. */
 export async function cancelInvoiceTx(tx: Db, id: number, opts: CancelOptions = {}): Promise<void> {
-  const inv = await one<{ cancelled_at: string | null; kind: string }>(tx, 'SELECT cancelled_at, kind FROM invoices WHERE id = ?', [id]);
+  const inv = await one<{ cancelled_at: string | null; kind: string; party_id: number }>(tx, 'SELECT cancelled_at, kind, party_id FROM invoices WHERE id = ?', [id]);
   if (!inv) throw new ServiceError('NOT_FOUND', 'الفاتورة غير موجودة');
   if (inv.cancelled_at) throw new ServiceError('ALREADY_CANCELLED', 'الفاتورة ملغاة بالفعل');
   const rets = await one<{ n: number }>(tx, 'SELECT COUNT(*) AS n FROM returns WHERE invoice_id = ?', [id]);
   if ((rets?.n ?? 0) > 0) throw new ServiceError('HAS_RETURNS', 'لا يمكن إلغاء فاتورة لها مرتجعات');
+  // Payments made only for this invoice are cancelled with it (after confirmation). A payment that ALSO paid other bills is kept:
+  // only this invoice's share goes back to unapplied credit, which then pays the next oldest bill.
   const pays = await tx.all<{ id: number }>(
-    'SELECT DISTINCT p.id FROM payment_allocations a JOIN payments p ON p.id = a.payment_id WHERE a.invoice_id = ? AND p.cancelled_at IS NULL', [id]);
-  if (pays.length && !opts.cancelPayments) throw new ServiceError('HAS_PAYMENTS', 'عليها دفعات مسجلة. أكّد إلغاء الدفعات معها.', { paymentIds: pays.map(p => p.id) });
-  for (const p of pays) await cancelPaymentTx(tx, p.id);
+    "SELECT DISTINCT p.id FROM payment_allocations a JOIN payments p ON p.id = a.payment_id WHERE a.invoice_id = ? AND a.kind = 'invoice' AND p.cancelled_at IS NULL", [id]);
+  const dedicated: number[] = []; const shared: number[] = [];
+  for (const p of pays) {
+    const others = await one<{ n: number }>(tx, "SELECT COUNT(*) AS n FROM payment_allocations WHERE payment_id = ? AND ((kind = 'invoice' AND invoice_id <> ?) OR kind = 'opening')", [p.id, id]);
+    ((others?.n ?? 0) > 0 ? shared : dedicated).push(p.id);
+  }
+  if (dedicated.length && !opts.cancelPayments) throw new ServiceError('HAS_PAYMENTS', 'عليها دفعات مسجلة. أكّد إلغاء الدفعات معها.', { paymentIds: dedicated });
+  for (const pid of dedicated) await cancelPaymentTx(tx, pid);
+  for (const pid of shared) {
+    const row = await one<{ amount: number }>(tx, "SELECT amount FROM payment_allocations WHERE payment_id = ? AND invoice_id = ? AND kind = 'invoice'", [pid, id]);
+    if (row) { await reduceAllocation(tx, pid, id, 'invoice', row.amount); await addAllocation(tx, pid, null, 'advance', row.amount); }
+  }
 
   const moves = await tx.all<{ id: number; product_id: number; base_qty_milli: number; date: string }>(
     "SELECT id, product_id, base_qty_milli, date FROM stock_movements WHERE source_table = 'invoices' AND source_id = ? AND reverses_id IS NULL", [id]);
@@ -121,6 +134,7 @@ export async function cancelInvoiceTx(tx: Db, id: number, opts: CancelOptions = 
     "SELECT id, party_id, type, delta, date FROM ledger_entries WHERE source_table = 'invoices' AND source_id = ? AND reverses_id IS NULL", [id]);
   for (const l of led) await tx.run("INSERT INTO ledger_entries(party_id, type, delta, date, source_table, source_id, reverses_id) VALUES (?,?,?,?, 'invoices', ?, ?)", [l.party_id, l.type, -l.delta, l.date, id, l.id]);
   await tx.run("UPDATE invoices SET cancelled_at = datetime('now') WHERE id = ?", [id]);
+  await settleParty(tx, inv.party_id);
 }
 export const cancelInvoice = (db: Db, id: number, opts: CancelOptions = {}) => db.transaction(tx => cancelInvoiceTx(tx, id, opts));
 

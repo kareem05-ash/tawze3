@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { exportStatementPdf } from '../../export/documentExport';
 import { ar } from '../../i18n/ar';
-import { archiveParty, createParty, getInvoiceState, getParty, listInvoices, listParties, partyStatement, updateParty, type PartyRow } from '../../services';
+import { archiveParty, createParty, getParty, listParties, partyStatement, updateParty, type PartyRow } from '../../services';
 import type { PartyKind } from '../../domain/ledger';
 import { useReadyDb } from '../DbProvider';
 import { useLoad, go } from '../hooks';
@@ -9,7 +9,8 @@ import { BalanceTag, ConfirmDialog, Empty, ErrorBox, Fab, Field, Segmented, Shee
 import { dateLabel, money, monthStartIso, toMinor, todayIso } from '../format';
 import { PaymentSheet } from './PaymentSheet';
 
-function PartyForm({ kind, existing, onDone, onClose }: { kind: PartyKind; existing?: PartyRow; onDone: () => void; onClose: () => void }) {
+/** The ONE add/edit account form: used by the Accounts screen and by the sale/purchase forms. */
+export function PartyForm({ kind, existing, onDone, onClose }: { kind: PartyKind; existing?: PartyRow; onDone: (id: number) => void; onClose: () => void }) {
   const { db } = useReadyDb();
   const [name, setName] = useState(existing?.name ?? ''); const [phone, setPhone] = useState(existing?.phone ?? '');
   const [address, setAddress] = useState(existing?.address ?? ''); const [notes, setNotes] = useState(existing?.notes ?? '');
@@ -17,13 +18,14 @@ function PartyForm({ kind, existing, onDone, onClose }: { kind: PartyKind; exist
   const [openDate, setOpenDate] = useState(todayIso()); const [err, setErr] = useState('');
   const save = async () => {
     try {
-      if (existing) await updateParty(db, existing.id, { name, phone, address, notes });
+      let id: number;
+      if (existing) { await updateParty(db, existing.id, { name, phone, address, notes }); id = existing.id; }
       else {
         const v = open.trim() ? toMinor(open) : 0;
         if (v === null || v < 0) { setErr(ar.common.amount); return; }
-        await createParty(db, { kind, name, phone, address, notes, openingBalance: dir === 'owes_us' ? v : -v, openingDate: openDate });
+        id = await createParty(db, { kind, name, phone, address, notes, openingBalance: dir === 'owes_us' ? v : -v, openingDate: openDate });
       }
-      onDone();
+      onDone(id);
     } catch (e) { setErr(errText(e)); }
   };
   return (
@@ -71,14 +73,10 @@ export function PartyDetail({ id }: { id: number }) {
   const { db } = useReadyDb();
   const party = useLoad(db => getParty(db, id), [id]);
   const stmt = useLoad(db => partyStatement(db, id, from, to), [id, from, to]);
-  const open = useLoad(async db => {
-    const inv = await listInvoices(db, { partyId: id });
-    const states = await Promise.all(inv.slice(0, 100).map(async i => ({ i, s: await getInvoiceState(db, i.id) })));
-    return states.filter(x => x.s && x.s.outstanding > 0).map(x => ({ id: x.i.id, ref: x.i.ref, outstanding: x.s!.outstanding }));
-  }, [id]);
   const [xnote, setXnote] = useState(''); const [xerr, setXerr] = useState(''); const [xbusy, setXbusy] = useState(false);
   const doExport = async (mode: 'save' | 'whatsapp') => { setXbusy(true); setXerr(''); setXnote(ar.share.preparing); try { const r = await exportStatementPdf(db, id, from, to, mode); setXnote(r.kind === 'whatsapp-opened' ? ar.share.waOpened : r.kind === 'downloaded' ? ar.share.downloaded : r.kind === 'shared' ? ar.share.shared : ''); } catch (e) { setXnote(''); setXerr(ar.share.failed + ': ' + errText(e)); } finally { setXbusy(false); } };
-  const refresh = () => { party.reload(); stmt.reload(); open.reload(); };
+  const refresh = () => { party.reload(); stmt.reload(); };
+  const [payNote, setPayNote] = useState('');
   const p = party.data;
   if (party.error) return <ErrorBox message={party.error} />;
   if (!p) return <p className="muted">{ar.common.loading}</p>;
@@ -91,6 +89,7 @@ export function PartyDetail({ id }: { id: number }) {
         {(p.phone || p.address) && <p className="muted small">{[p.phone, p.address].filter(Boolean).join(' · ')}</p>}
         <p className="muted small">{ar.party.balance}</p>
         <div className="big"><BalanceTag kind={p.kind} balance={p.balance} /></div>
+        {payNote && <p className="amt-in" role="status">{payNote}</p>}
         <div className="actions">
           <button className="btn" onClick={() => setSheet('pay')}>{p.kind === 'customer' ? ar.payment.receive : ar.payment.pay}</button>
           <button className="btn ghost" onClick={() => go(`${route}/new/${p.id}`)}>{p.kind === 'customer' ? ar.party.newSale : ar.party.newPurchase}</button>
@@ -117,7 +116,7 @@ export function PartyDetail({ id }: { id: number }) {
           </ul>
         )}
       </section>
-      {sheet === 'pay' && <PaymentSheet partyId={p.id} kind={p.kind} invoices={open.data} onClose={() => setSheet(null)} onDone={() => { setSheet(null); refresh(); }} />}
+      {sheet === 'pay' && <PaymentSheet partyId={p.id} kind={p.kind} onClose={() => setSheet(null)} onDone={m => { setSheet(null); setPayNote(m); refresh(); }} />}
       {sheet === 'edit' && <PartyForm kind={p.kind} existing={p} onClose={() => setSheet(null)} onDone={() => { setSheet(null); refresh(); }} />}
       {sheet === 'archive' && <ConfirmDialog title={p.archived ? ar.common.restore : ar.common.archive} message={p.archived ? ar.common.restore : ar.party.archiveConfirm} danger={!p.archived}
         onCancel={() => setSheet(null)} onConfirm={async () => { await archiveParty(db, p.id, !p.archived); setSheet(null); refresh(); }} />}
