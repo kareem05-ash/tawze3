@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Db } from '../db/types';
 import { useReadyDb } from './DbProvider';
-import { errText } from './kit';
+import { errText } from './errors';
 
 export function useLoad<T>(fn: (db: Db) => Promise<T>, deps: unknown[] = []) {
   const { db } = useReadyDb();
@@ -24,3 +24,15 @@ export function useRoute(): string[] {
   return r;
 }
 export const go = (path: string) => { location.hash = path; };
+
+/** Runs one async action at a time: `busy` disables submit buttons, and a second call while one is running is ignored (double-tap safe). */
+export function useGuard() {
+  const running = useRef(false); const alive = useRef(true); const [busy, setBusy] = useState(false);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+  const guard = useCallback(async <T,>(fn: () => Promise<T>): Promise<T | undefined> => {
+    if (running.current) return undefined;
+    running.current = true; setBusy(true);
+    try { return await fn(); } finally { running.current = false; if (alive.current) setBusy(false); }
+  }, []);
+  return { busy, guard };
+}

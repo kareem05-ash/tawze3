@@ -3,7 +3,8 @@ import { ar } from '../i18n/ar';
 import { hasPin, pinLength, verifyPin, setPin, changePin, disablePin, isValidPin, normalizePin } from '../security/pin';
 import { biometricAvailable, biometricEnabled, biometricUnlock } from '../security/biometric';
 import { useReadyDb } from './DbProvider';
-import { ErrorBox, Field, Sheet, errText } from './kit';
+import { CancelButton, ErrorBox, Field, Sheet, errText } from './kit';
+import { useGuard } from './hooks';
 
 export const AUTOLOCK_MS = 30_000; // lock again when the app comes back after >30s in the background
 const Ctx = createContext<{ lockNow: () => void; refresh: () => void; enabled: boolean }>({ lockNow: () => {}, refresh: () => {}, enabled: false });
@@ -77,19 +78,21 @@ export function LockGate({ children }: { children: ReactNode }) {
 export function PinSheet({ mode, onDone, onClose }: { mode: 'set' | 'change' | 'disable'; onDone: (msg: string) => void; onClose: () => void }) {
   const { db } = useReadyDb();
   const [cur, setCur] = useState(''); const [a, setA] = useState(''); const [b, setB] = useState(''); const [err, setErr] = useState('');
-  const save = async () => {
+  const [errs, setErrs] = useState<{ cur?: string; a?: string; b?: string }>({}); const { busy, guard } = useGuard();
+  const save = () => guard(async () => {
+    setErr(''); setErrs({});
     try {
-      if (mode !== 'disable') { if (!isValidPin(a)) { setErr('الرمز يجب أن يكون من ٤ إلى ٨ أرقام'); return; } if (normalizePin(a) !== normalizePin(b)) { setErr(ar.lock.mismatch); return; } }
+      if (mode !== 'disable') { if (!isValidPin(a)) { setErrs({ a: ar.lock.badLength }); return; } if (normalizePin(a) !== normalizePin(b)) { setErrs({ b: ar.lock.mismatch }); return; } }
       if (mode === 'set') await setPin(db, a); else if (mode === 'change') await changePin(db, cur, a); else await disablePin(db, cur);
       onDone(mode === 'disable' ? ar.lock.removed : ar.lock.done);
-    } catch (e) { setErr(errText(e)); }
-  };
-  const pinInput = (v: string, set: (s: string) => void, label: string, focus = false) => <Field label={label}><input type="password" inputMode="numeric" autoComplete="off" maxLength={8} autoFocus={focus} value={v} onChange={e => set(e.target.value)} /></Field>;
+    } catch (e) { if (mode !== 'set') setErrs({ cur: errText(e) }); else setErr(errText(e)); }   // a wrong current PIN belongs to the "current PIN" field
+  });
+  const pinInput = (v: string, set: (s: string) => void, label: string, focus = false, error?: string) => <Field label={label} error={error}><input type="password" inputMode="numeric" autoComplete="off" maxLength={8} autoFocus={focus} value={v} onChange={e => set(e.target.value)} /></Field>;
   return (
     <Sheet title={mode === 'set' ? ar.lock.enable : mode === 'change' ? ar.lock.change : ar.lock.disable} onClose={onClose}
-      footer={<><button className="btn ghost" onClick={onClose}>{ar.common.cancel}</button><button className="btn" onClick={() => void save()}>{ar.common.save}</button></>}>
-      {mode !== 'set' && pinInput(cur, setCur, ar.lock.current, true)}
-      {mode !== 'disable' && <>{pinInput(a, setA, ar.lock.newPin, mode === 'set')}{pinInput(b, setB, ar.lock.repeat)}</>}
+      footer={<><CancelButton disabled={busy} /><button className="btn" disabled={busy} onClick={() => void save()}>{ar.common.save}</button></>}>
+      {mode !== 'set' && pinInput(cur, setCur, ar.lock.current, true, errs.cur)}
+      {mode !== 'disable' && <>{pinInput(a, setA, ar.lock.newPin, mode === 'set', errs.a)}{pinInput(b, setB, ar.lock.repeat, false, errs.b)}</>}
       <ErrorBox message={err} />
     </Sheet>
   );

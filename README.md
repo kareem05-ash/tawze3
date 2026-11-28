@@ -21,7 +21,7 @@ npm run build
 
 ## Docs
 - `docs/ARCHITECTURE.md`, `docs/ACCOUNTING.md` (formulas and rules), `docs/DATABASE.md` (schema, migrations)
-- `docs/ANDROID.md` (build the APK, signing, install), `docs/UPDATING.md` (update without losing data)
+- `docs/ANDROID.md` (build the APK, signing, install), `docs/UPDATING.md` (update without losing data), `docs/RELEASING.md` (tag-driven versions and releases)
 - `docs/BACKUP.md`, `docs/GITHUB.md`, `docs/OWNER_GUIDE_AR.md` (simple Arabic guide for the owner)
 
 ## Invoice export (PDF / PNG / WhatsApp)

@@ -5,6 +5,32 @@ def keystorePropsFile = rootProject.file("keystore.properties")
 def keystoreProps = new Properties()
 if (keystorePropsFile.exists()) { keystorePropsFile.withInputStream { keystoreProps.load(it) } }
 
+// ---- Version metadata (Git-tag driven) ----
+// Supplied by CI from scripts/version.mjs as -PappVersionName=0.1.3 -PappVersionCode=1003 (or env APP_VERSION_NAME / APP_VERSION_CODE).
+// Format: MAJOR.MINOR.PATCH with MAJOR<=2099, MINOR<=999, PATCH<=999; versionCode = MAJOR*1000000 + MINOR*1000 + PATCH (see docs/RELEASING.md).
+// Neither supplied -> development fallback (0.0.0-dev / 1). Only one supplied, malformed, out of range or inconsistent -> the build FAILS.
+def versionInput = { String prop, String env ->
+    def v = project.findProperty(prop) ?: System.getenv(env)
+    v == null || v.toString().trim().isEmpty() ? null : v.toString().trim()
+}
+def resolveVersion = {
+    def name = versionInput('appVersionName', 'APP_VERSION_NAME')
+    def code = versionInput('appVersionCode', 'APP_VERSION_CODE')
+    if (name == null && code == null) return [name: '0.0.0-dev', code: 1]
+    if (name == null || code == null) throw new GradleException("appVersionName and appVersionCode must be supplied together (got name='${name}', code='${code}').")
+    def m = (name =~ /^(0|[1-9][0-9]{0,3})\.(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2})$/)
+    if (!m.matches()) throw new GradleException("Invalid appVersionName '${name}': expected MAJOR.MINOR.PATCH (digits, no leading zeros, no suffix).")
+    long major = m.group(1) as long, minor = m.group(2) as long, patch = m.group(3) as long
+    if (major > 2099) throw new GradleException("Invalid appVersionName '${name}': MAJOR exceeds 2099.")
+    if (!(code ==~ /^[1-9][0-9]{0,9}$/)) throw new GradleException("Invalid appVersionCode '${code}': expected a positive integer.")
+    long codeNum = code as long
+    if (codeNum > 2100000000L) throw new GradleException("appVersionCode ${codeNum} exceeds Android's maximum 2100000000.")
+    long expected = major * 1000000L + minor * 1000L + patch
+    if (codeNum != expected) throw new GradleException("appVersionCode ${codeNum} does not match appVersionName ${name} (expected ${expected}).")
+    return [name: name, code: codeNum as int]
+}
+def appVersion = resolveVersion()
+
 android {
     namespace "com.tawze3.app"
     compileSdk rootProject.ext.compileSdkVersion
@@ -12,8 +38,8 @@ android {
         applicationId "com.tawze3.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0.0"
+        versionCode appVersion.code
+        versionName appVersion.name
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

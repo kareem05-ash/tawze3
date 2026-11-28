@@ -1,4 +1,5 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
+import { canAnimate } from './motion';
 export type Theme = 'light' | 'dark';
 const KEY = 'dp.theme'; // UI preference only (not business data), so localStorage is acceptable here.
 const Ctx = createContext<{ theme: Theme; toggle: () => void }>({ theme: 'light', toggle: () => {} });
@@ -13,6 +14,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     document.documentElement.dataset.theme = theme;
     try { localStorage.setItem(KEY, theme); } catch { /* ignore */ }
   }, [theme]);
-  return <Ctx.Provider value={{ theme, toggle: () => setTheme(t => (t === 'light' ? 'dark' : 'light')) }}>{children}</Ctx.Provider>;
+  // Short colour cross-fade while switching (not on first load); skipped entirely under prefers-reduced-motion.
+  const toggle = useCallback(() => {
+    if (canAnimate()) { const el = document.documentElement; el.classList.add('theme-anim'); setTimeout(() => el.classList.remove('theme-anim'), 320); }
+    setTheme(t => (t === 'light' ? 'dark' : 'light'));
+  }, []);
+  return <Ctx.Provider value={{ theme, toggle }}>{children}</Ctx.Provider>;
 }
 export const useTheme = () => useContext(Ctx);

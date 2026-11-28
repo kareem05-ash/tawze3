@@ -7,8 +7,9 @@ import {
 import { computeInvoice } from '../../domain/invoice';
 import { lineTotal } from '../../domain/money';
 import { useReadyDb } from '../DbProvider';
-import { useLoad, go } from '../hooks';
-import { ConfirmDialog, Empty, ErrorBox, Fab, Field, Sheet, errText } from '../kit';
+import { useGuard, useLoad, go } from '../hooks';
+import { CancelButton, ConfirmDialog, Empty, ErrorBox, Fab, Field, Sheet, errText } from '../kit';
+import { useToast } from '../toast';
 import { dateLabel, milliToInput, minorToInput, money, qty, toMilli, toMinor, todayIso } from '../format';
 import { exportReceipt, type ExportFormat } from '../../export/receiptExport';
 import { PaymentSheet } from './PaymentSheet';
@@ -48,13 +49,13 @@ let lineKey = 1;
 const blankLine = (): LineState => ({ key: lineKey++, productId: '', unitId: '', qty: '1', price: '', discount: '' });
 
 export function InvoiceForm({ kind, partyId, replaceId }: { kind: Kind; partyId?: number; replaceId?: number }) {
-  const { db } = useReadyDb();
+  const { db } = useReadyDb(); const toast = useToast(); const { busy, guard } = useGuard(); const [partyErr, setPartyErr] = useState('');
   const parties = useLoad(d => listParties(d, { kind: kind === 'sale' ? 'customer' : 'supplier' }), [kind]);
   const products = useLoad(d => listProducts(d), []);
   const unitsAll = useLoad(d => listAllProductUnits(d), []);
   const [party, setParty] = useState(partyId ? String(partyId) : ''); const [date, setDate] = useState(todayIso());
   const [lines, setLines] = useState<LineState[]>([blankLine()]); const [disc, setDisc] = useState(''); const [paid, setPaid] = useState('');
-  const [ext, setExt] = useState(''); const [notes, setNotes] = useState(''); const [err, setErr] = useState(''); const [busy, setBusy] = useState(false);
+  const [ext, setExt] = useState(''); const [notes, setNotes] = useState(''); const [err, setErr] = useState('');
   const [newParty, setNewParty] = useState(false); const [quick, setQuick] = useState<number | null>(null); const [override, setOverride] = useState<string | null>(null); const [prefilled, setPrefilled] = useState(!replaceId);
 
   useLoad(async d => {
@@ -99,19 +100,21 @@ export function InvoiceForm({ kind, partyId, replaceId }: { kind: Kind; partyId?
   const total = 'totals' in parsed && parsed.totals ? parsed.totals.total : null;
   const paidMinor = paid.trim() ? toMinor(paid) : 0;
 
-  const submit = async (allowNegativeStock = false) => {
-    if (!party) { setErr(ar.invoice.needParty); return; }
+  const submit = (allowNegativeStock = false) => guard(async () => {
+    setErr(''); setPartyErr('');
+    if (!party) { setPartyErr(ar.invoice.needParty); return; }
     if (!('lines' in parsed) || !parsed.lines) { setErr(parsed.error ?? ''); return; }
     if (paidMinor === null || paidMinor < 0) { setErr(ar.invoice.paidNow); return; }
-    setBusy(true); setErr('');
     const input: InvoiceIn = { kind, partyId: Number(party), date, lines: parsed.lines, invoiceDiscount: parsed.idisc, paidNow: paidMinor, externalRef: ext || undefined, notes: notes || undefined, allowNegativeStock };
     try {
       const r = replaceId ? await replaceInvoice(db, replaceId, input) : await postInvoice(db, input);
+      toast.success(replaceId ? ar.fb.invoiceReplaced : ar.fb.invoiceSaved);
+      if (allowNegativeStock) toast.warning(ar.fb.stockOverride);
       go(`${route(kind)}/${r.id}`);
     } catch (e) {
       if (e instanceof ServiceError && e.code === 'INSUFFICIENT_STOCK' && kind === 'sale') setOverride(e.message); else setErr(errText(e));
-    } finally { setBusy(false); }
-  };
+    }
+  });
 
   if (!prefilled) return <p className="muted">{ar.common.loading}</p>;
   const title = replaceId ? (kind === 'sale' ? ar.invoice.editSale : ar.invoice.editPurchase) : kind === 'sale' ? ar.invoice.newSale : ar.invoice.newPurchase;
@@ -120,8 +123,8 @@ export function InvoiceForm({ kind, partyId, replaceId }: { kind: Kind; partyId?
       <h2 className="page-title">{title}</h2>
       {replaceId && <p className="notice">{ar.invoice.replacedNote}</p>}
       <section className="card">
-        <Field label={kind === 'sale' ? ar.invoice.customer : ar.invoice.supplier}>
-          <div className="with-add"><select value={party} onChange={e => setParty(e.target.value)}><option value="">{ar.invoice.pickParty}</option>{parties.data?.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
+        <Field label={kind === 'sale' ? ar.invoice.customer : ar.invoice.supplier} error={partyErr}>
+          <div className="with-add"><select value={party} onChange={e => { setParty(e.target.value); setPartyErr(''); }}><option value="">{ar.invoice.pickParty}</option>{parties.data?.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
             <button type="button" className="link" onClick={() => setNewParty(true)}>{ar.common.newItem}</button></div>
         </Field>
         <Field label={ar.common.date}><input type="date" value={date} onChange={e => setDate(e.target.value)} /></Field>
@@ -168,7 +171,7 @@ export function InvoiceForm({ kind, partyId, replaceId }: { kind: Kind; partyId?
 }
 
 function ReturnSheet({ invoiceId, kind, onDone, onClose }: { invoiceId: number; kind: Kind; onDone: () => void; onClose: () => void }) {
-  const { db } = useReadyDb();
+  const { db } = useReadyDb(); const toast = useToast(); const { busy, guard } = useGuard();
   const lines = useLoad(async d => {
     const det = await getInvoiceDetail(d, invoiceId);
     const rem = await Promise.all((det?.lines ?? []).map(async l => {
@@ -179,13 +182,15 @@ function ReturnSheet({ invoiceId, kind, onDone, onClose }: { invoiceId: number; 
   }, [invoiceId]);
   const [vals, setVals] = useState<Record<number, string>>({}); const [unusable, setUnusable] = useState<Record<number, boolean>>({});
   const [date, setDate] = useState(todayIso()); const [err, setErr] = useState('');
-  const save = async () => {
+  const save = () => guard(async () => {
+    setErr('');
     const picked = (lines.data ?? []).map(l => ({ l, q: vals[l.id]?.trim() ? toMilli(vals[l.id]!) : 0 })).filter(x => x.q !== 0);
     if (picked.some(x => x.q === null || (x.q ?? 0) < 0)) { setErr(ar.common.qty); return; }
-    try { await postReturn(db, { invoiceId, date, lines: picked.map(x => ({ invoiceLineId: x.l.id, qtyMilli: x.q as number, usable: !unusable[x.l.id] })) }); onDone(); } catch (e) { setErr(errText(e)); }
-  };
+    if (picked.length === 0) { setErr(ar.ret.nothingPicked); return; }
+    try { await postReturn(db, { invoiceId, date, lines: picked.map(x => ({ invoiceLineId: x.l.id, qtyMilli: x.q as number, usable: !unusable[x.l.id] })) }); toast.success(ar.fb.returnDone); onDone(); } catch (e) { setErr(errText(e)); }
+  });
   return (
-    <Sheet title={kind === 'sale' ? ar.ret.customerTitle : ar.ret.supplierTitle} onClose={onClose} footer={<><button className="btn ghost" onClick={onClose}>{ar.common.cancel}</button><button className="btn" onClick={() => void save()}>{ar.common.save}</button></>}>
+    <Sheet title={kind === 'sale' ? ar.ret.customerTitle : ar.ret.supplierTitle} onClose={onClose} footer={<><CancelButton disabled={busy} /><button className="btn" disabled={busy} onClick={() => void save()}>{ar.common.save}</button></>}>
       {lines.data?.length === 0 && <p className="muted">{ar.ret.none}</p>}
       {lines.data?.map(l => (
         <div className="card line" key={l.id}><strong>{l.name}</strong><span className="muted small">{ar.ret.remaining}: {qty(l.remaining)} {l.unit}</span>
@@ -199,8 +204,8 @@ function ReturnSheet({ invoiceId, kind, onDone, onClose }: { invoiceId: number; 
 }
 
 export function InvoiceDetail({ id, kind }: { id: number; kind: Kind }) {
-  const { db } = useReadyDb();
-  const [sheet, setSheet] = useState<'pay' | 'ret' | 'cancel' | null>(null); const [err, setErr] = useState(''); const [note, setNote] = useState(''); const [busy, setBusy] = useState(false);
+  const { db } = useReadyDb(); const toast = useToast(); const x = useGuard();
+  const [sheet, setSheet] = useState<'pay' | 'ret' | 'cancel' | null>(null);
   const { data, error, reload } = useLoad(async d => ({ det: await getInvoiceDetail(d, id), biz: (await getSetting(d, 'business_name')) ?? ar.appName }), [id]);
   if (error) return <ErrorBox message={error} />;
   if (!data) return <p className="muted">{ar.common.loading}</p>;
@@ -208,13 +213,8 @@ export function InvoiceDetail({ id, kind }: { id: number; kind: Kind }) {
   const { det, biz } = data; const inv = det.invoice as Record<string, unknown>; const st = det.state;
   const activePays = det.payments.filter(p => !p.cancelled_at);
   const done = () => { setSheet(null); reload(); };
-  const doExport = async (f: ExportFormat) => {
-    setBusy(true); setErr(''); setNote(ar.share.preparing);
-    try {
-      const r = await exportReceipt(db, id, f);
-      setNote(r.kind === 'whatsapp-opened' ? ar.share.waOpened : r.kind === 'downloaded' ? ar.share.downloaded : r.kind === 'shared' ? ar.share.shared : '');
-    } catch (e) { setNote(''); setErr(ar.share.failed + ': ' + errText(e)); } finally { setBusy(false); }
-  };
+  const doExport = (f: ExportFormat) => x.guard(() => toast.run(() => exportReceipt(db, id, f), { loading: ar.share.preparing, error: ar.share.failed,
+    success: r => (r.kind === 'whatsapp-opened' ? ar.share.waOpened : r.kind === 'downloaded' ? ar.share.downloaded : r.kind === 'shared' ? ar.share.shared : '') }));
   return (
     <>
       <section className="card receipt" aria-label={ar.invoice.receipt}>
@@ -236,12 +236,10 @@ export function InvoiceDetail({ id, kind }: { id: number; kind: Kind }) {
       </section>
       {activePays.length > 0 && <section className="card"><h3>{ar.invoice.payments}</h3><ul className="list tight">{activePays.map(p => <li key={p.id} className="row static"><span>{p.ref} · {dateLabel(p.date)}</span><strong>{money(p.allocated)}</strong></li>)}</ul></section>}
       <div className="actions" role="group" aria-label={ar.share.title}>
-        <button className="btn ghost" disabled={busy} onClick={() => void doExport('pdf')}>{ar.share.pdf}</button>
-        <button className="btn ghost" disabled={busy} onClick={() => void doExport('png')}>{ar.share.png}</button>
-        <button className="btn wa" disabled={busy} onClick={() => void doExport('whatsapp')}>{ar.share.whatsapp}</button>
+        <button className="btn ghost" disabled={x.busy} onClick={() => void doExport('pdf')}>{ar.share.pdf}</button>
+        <button className="btn ghost" disabled={x.busy} onClick={() => void doExport('png')}>{ar.share.png}</button>
+        <button className="btn wa" disabled={x.busy} onClick={() => void doExport('whatsapp')}>{ar.share.whatsapp}</button>
       </div>
-      {note && <p className="muted" role="status">{note}</p>}
-      <ErrorBox message={err} />
       {!st.cancelled && (
         <div className="actions">
           {st.outstanding > 0 && <button className="btn" onClick={() => setSheet('pay')}>{ar.invoice.addPayment}</button>}
@@ -249,10 +247,13 @@ export function InvoiceDetail({ id, kind }: { id: number; kind: Kind }) {
           {st.returned === 0 && <button className="btn ghost" onClick={() => go(`${route(kind)}/edit/${id}`)}>{ar.common.edit}</button>}
           {st.returned === 0 && <button className="btn danger ghost" onClick={() => setSheet('cancel')}>{ar.invoice.cancel}</button>}
         </div>)}
-      {sheet === 'pay' && <PaymentSheet partyId={st.partyId} kind={kind === 'sale' ? 'customer' : 'supplier'} invoiceId={id} suggested={st.outstanding} onClose={() => setSheet(null)} onDone={m => { setSheet(null); setNote(m); reload(); }} />}
+      {sheet === 'pay' && <PaymentSheet partyId={st.partyId} kind={kind === 'sale' ? 'customer' : 'supplier'} invoiceId={id} suggested={st.outstanding} onClose={() => setSheet(null)} onDone={m => { setSheet(null); toast.success(m); reload(); }} />}
       {sheet === 'ret' && <ReturnSheet invoiceId={id} kind={kind} onClose={() => setSheet(null)} onDone={done} />}
       {sheet === 'cancel' && <ConfirmDialog title={ar.invoice.cancel} danger message={`${ar.invoice.cancelConfirm}${activePays.length ? ' ' + ar.invoice.cancelWithPayments : ''}`}
-        onCancel={() => setSheet(null)} onConfirm={async () => { try { await cancelInvoice(db, id, { cancelPayments: true }); done(); } catch (e) { setSheet(null); setErr(errText(e)); } }} />}
+        onCancel={() => setSheet(null)} onConfirm={async () => {
+          const r = await toast.run(() => cancelInvoice(db, id, { cancelPayments: true }), { success: ar.fb.invoiceCancelled, error: ar.fb.invoiceCancelFailed });
+          if (r.ok) done(); else setSheet(null);
+        }} />}
     </>
   );
 }

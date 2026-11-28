@@ -2,43 +2,50 @@ import { useState } from 'react';
 import { ar } from '../../i18n/ar';
 import { archiveProduct, createCategory, createProduct, createUnit, getProductUnits, listCategories, listProducts, listUnits, recordStockAdjustment, updateProduct, type AdjustReason, type ProductRow } from '../../services';
 import { useReadyDb } from '../DbProvider';
-import { useLoad } from '../hooks';
-import { ConfirmDialog, Empty, ErrorBox, Fab, Field, InlineAdd, Sheet, errText } from '../kit';
+import { useGuard, useLoad } from '../hooks';
+import { CancelButton, ConfirmDialog, Empty, ErrorBox, Fab, Field, InlineAdd, Sheet, errText } from '../kit';
+import { useToast } from '../toast';
 import { milliToInput, minorToInput, money, qty, toMilli, toMinor, todayIso } from '../format';
 
 export function ProductForm({ existing, onDone, onClose }: { existing?: ProductRow; onDone: (id: number) => void; onClose: () => void }) {
-  const { db } = useReadyDb();
+  const { db } = useReadyDb(); const toast = useToast(); const { busy, guard } = useGuard();
   const cats = useLoad(listCategories); const units = useLoad(listUnits);
   const [name, setName] = useState(existing?.name ?? ''); const [desc, setDesc] = useState(existing?.description ?? ''); const [notes, setNotes] = useState(existing?.notes ?? '');
   const [cat, setCat] = useState(existing?.category_id ? String(existing.category_id) : ''); const [base, setBase] = useState(existing ? String(existing.base_unit_id) : '');
   const [buy, setBuy] = useState(existing ? minorToInput(existing.buy_price) : ''); const [sell, setSell] = useState(existing ? minorToInput(existing.sell_price) : '');
   const [low, setLow] = useState(existing ? milliToInput(existing.low_stock_milli) : '');
   const [extra, setExtra] = useState<{ unitId: string; factor: string }[]>([]);
-  const [err, setErr] = useState(''); const [loaded, setLoaded] = useState(!existing);
+  const [err, setErr] = useState(''); const [errs, setErrs] = useState<Record<string, string>>({}); const [loaded, setLoaded] = useState(!existing);
   useLoad(async d => { if (existing) { const u = await getProductUnits(d, existing.id); setExtra(u.filter(x => x.unit_id !== existing.base_unit_id).map(x => ({ unitId: String(x.unit_id), factor: String(x.factor_to_base) }))); setLoaded(true); } return 0; }, [existing?.id]);
   const baseLocked = !!existing && existing.stock_milli !== 0; // base unit can't change once movements exist (service enforces this too)
-  const save = async () => {
+  const save = () => guard(async () => {
+    setErr(''); setErrs({});
     try {
       const buyP = buy.trim() ? toMinor(buy) : 0, sellP = sell.trim() ? toMinor(sell) : 0, lowM = low.trim() ? toMilli(low) : 0;
-      if (buyP === null || sellP === null || lowM === null) { setErr(ar.common.amount); return; }
-      if (!base) { setErr(`${ar.common.required}: ${ar.product.baseUnit}`); return; }
+      const bad: Record<string, string> = {};   // validation messages go next to the field that needs fixing
+      if (!name.trim()) bad.name = ar.common.required;
+      if (!base) bad.base = ar.common.required;
+      if (buyP === null) bad.buy = ar.common.amount; if (sellP === null) bad.sell = ar.common.amount; if (lowM === null) bad.low = ar.common.amount;
+      if (Object.keys(bad).length) { setErrs(bad); return; }
+      if (buyP === null || sellP === null || lowM === null) return;
       const extraUnits = extra.filter(x => x.unitId).map(x => ({ unitId: Number(x.unitId), factorToBase: Number(x.factor.replace(',', '.')) }));
       const common = { name, description: desc, notes, categoryId: cat ? Number(cat) : null, buyPrice: buyP, sellPrice: sellP, lowStockMilli: lowM, extraUnits };
       let id: number;
       if (existing) { await updateProduct(db, existing.id, { ...common, baseUnitId: Number(base) }); id = existing.id; } else id = await createProduct(db, { ...common, baseUnitId: Number(base) });
+      toast.success(existing ? ar.fb.productUpdated : ar.fb.productAdded);
       onDone(id);
     } catch (e) { setErr(errText(e)); }
-  };
+  });
   return (
-    <Sheet title={existing ? ar.product.edit : ar.product.add} onClose={onClose} footer={<><button className="btn ghost" onClick={onClose}>{ar.common.cancel}</button><button className="btn" disabled={!loaded} onClick={() => void save()}>{ar.common.save}</button></>}>
-      <Field label={ar.product.name}><input autoFocus value={name} onChange={e => setName(e.target.value)} /></Field>
+    <Sheet title={existing ? ar.product.edit : ar.product.add} onClose={onClose} footer={<><CancelButton disabled={busy} /><button className="btn" disabled={!loaded || busy} onClick={() => void save()}>{ar.common.save}</button></>}>
+      <Field label={ar.product.name} error={errs.name}><input autoFocus value={name} onChange={e => setName(e.target.value)} /></Field>
       <Field label={ar.product.category}>
         <div className="with-add"><select value={cat} onChange={e => setCat(e.target.value)}><option value="">{ar.common.none}</option>{cats.data?.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
-          <InlineAdd placeholder={ar.product.newCategory} onCreate={async n => { const id = await createCategory(db, n); cats.reload(); setCat(String(id)); }} /></div>
+          <InlineAdd placeholder={ar.product.newCategory} successMessage={ar.fb.categoryAdded} onCreate={async n => { const id = await createCategory(db, n); cats.reload(); setCat(String(id)); }} /></div>
       </Field>
-      <Field label={ar.product.baseUnit} hint={baseLocked ? ar.product.stock : undefined}>
+      <Field label={ar.product.baseUnit} hint={baseLocked ? ar.product.stock : undefined} error={errs.base}>
         <div className="with-add"><select value={base} disabled={baseLocked} onChange={e => setBase(e.target.value)}><option value="">{ar.common.none}</option>{units.data?.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select>
-          <InlineAdd placeholder={ar.product.newUnit} onCreate={async n => { const id = await createUnit(db, n); units.reload(); if (!baseLocked && !base) setBase(String(id)); }} /></div>
+          <InlineAdd placeholder={ar.product.newUnit} successMessage={ar.fb.unitAdded} onCreate={async n => { const id = await createUnit(db, n); units.reload(); if (!baseLocked && !base) setBase(String(id)); }} /></div>
       </Field>
       <fieldset className="group"><legend>{ar.product.extraUnits}</legend>
         {extra.map((x, i) => (
@@ -49,8 +56,8 @@ export function ProductForm({ existing, onDone, onClose }: { existing?: ProductR
           </div>))}
         <button type="button" className="link" onClick={() => setExtra([...extra, { unitId: '', factor: '' }])}>{ar.product.addUnit}</button>
       </fieldset>
-      <div className="row2"><Field label={ar.product.buyPrice}><input inputMode="decimal" value={buy} onChange={e => setBuy(e.target.value)} /></Field><Field label={ar.product.sellPrice}><input inputMode="decimal" value={sell} onChange={e => setSell(e.target.value)} /></Field></div>
-      <Field label={ar.product.low}><input inputMode="decimal" value={low} onChange={e => setLow(e.target.value)} /></Field>
+      <div className="row2"><Field label={ar.product.buyPrice} error={errs.buy}><input inputMode="decimal" value={buy} onChange={e => setBuy(e.target.value)} /></Field><Field label={ar.product.sellPrice} error={errs.sell}><input inputMode="decimal" value={sell} onChange={e => setSell(e.target.value)} /></Field></div>
+      <Field label={ar.product.low} error={errs.low}><input inputMode="decimal" value={low} onChange={e => setLow(e.target.value)} /></Field>
       <Field label={ar.product.description}><input value={desc} onChange={e => setDesc(e.target.value)} /></Field>
       <Field label={ar.common.notes}><input value={notes} onChange={e => setNotes(e.target.value)} /></Field>
       <ErrorBox message={err} />
@@ -59,19 +66,20 @@ export function ProductForm({ existing, onDone, onClose }: { existing?: ProductR
 }
 
 function AdjustSheet({ product, onDone, onClose }: { product: ProductRow; onDone: () => void; onClose: () => void }) {
-  const { db } = useReadyDb();
+  const { db } = useReadyDb(); const toast = useToast(); const { busy, guard } = useGuard();
   const units = useLoad(d => getProductUnits(d, product.id), [product.id]);
   const [reason, setReason] = useState<AdjustReason>('missing'); const [q, setQ] = useState(''); const [unit, setUnit] = useState(String(product.base_unit_id));
-  const [date, setDate] = useState(todayIso()); const [notes, setNotes] = useState(''); const [err, setErr] = useState('');
-  const save = async () => {
-    const m = toMilli(q); if (m === null || m === 0) { setErr(ar.common.qty); return; }
-    try { await recordStockAdjustment(db, { productId: product.id, qtyMilli: m, unitId: Number(unit), date, reason, notes: notes || undefined }); onDone(); } catch (e) { setErr(errText(e)); }
-  };
+  const [date, setDate] = useState(todayIso()); const [notes, setNotes] = useState(''); const [err, setErr] = useState(''); const [qErr, setQErr] = useState('');
+  const save = () => guard(async () => {
+    setErr(''); setQErr('');
+    const m = toMilli(q); if (m === null || m === 0) { setQErr(ar.common.qty); return; }
+    try { await recordStockAdjustment(db, { productId: product.id, qtyMilli: m, unitId: Number(unit), date, reason, notes: notes || undefined }); toast.success(ar.fb.stockAdjusted); onDone(); } catch (e) { setErr(errText(e)); }
+  });
   return (
-    <Sheet title={`${ar.product.adjustTitle}: ${product.name}`} onClose={onClose} footer={<><button className="btn ghost" onClick={onClose}>{ar.common.cancel}</button><button className="btn" onClick={() => void save()}>{ar.common.save}</button></>}>
+    <Sheet title={`${ar.product.adjustTitle}: ${product.name}`} onClose={onClose} footer={<><CancelButton disabled={busy} /><button className="btn" disabled={busy} onClick={() => void save()}>{ar.common.save}</button></>}>
       <p className="muted">{ar.product.stock}: {qty(product.stock_milli)} {product.base_unit_name}</p>
       <Field label={ar.product.reason}><select value={reason} onChange={e => setReason(e.target.value as AdjustReason)}>{(Object.keys(ar.product.reasons) as AdjustReason[]).map(r => <option key={r} value={r}>{ar.product.reasons[r]}</option>)}</select></Field>
-      <div className="row2"><Field label={ar.common.qty}><input inputMode="decimal" value={q} onChange={e => setQ(e.target.value)} /></Field>
+      <div className="row2"><Field label={ar.common.qty} error={qErr}><input inputMode="decimal" value={q} onChange={e => setQ(e.target.value)} /></Field>
         <Field label={ar.common.unit}><select value={unit} onChange={e => setUnit(e.target.value)}>{units.data?.map(u => <option key={u.unit_id} value={u.unit_id}>{u.unit_name}</option>)}</select></Field></div>
       <Field label={ar.common.date}><input type="date" value={date} onChange={e => setDate(e.target.value)} /></Field>
       <Field label={ar.common.notes}><input value={notes} onChange={e => setNotes(e.target.value)} /></Field>
@@ -81,7 +89,7 @@ function AdjustSheet({ product, onDone, onClose }: { product: ProductRow; onDone
 }
 
 export function ProductsPage({ autoNew = false }: { autoNew?: boolean }) {
-  const { db } = useReadyDb();
+  const { db } = useReadyDb(); const toast = useToast();
   const [q, setQ] = useState(''); const [arch, setArch] = useState(false); const [sheet, setSheet] = useState<{ kind: 'form' | 'adjust' | 'archive'; p?: ProductRow } | null>(autoNew ? { kind: 'form' } : null);
   const { data, error, reload } = useLoad(d => listProducts(d, { search: q, includeArchived: arch }), [q, arch]);
   const done = () => { setSheet(null); reload(); };
@@ -110,7 +118,11 @@ export function ProductsPage({ autoNew = false }: { autoNew?: boolean }) {
       {sheet?.kind === 'form' && <><ProductForm existing={sheet.p} onClose={() => setSheet(null)} onDone={done} />{sheet.p && <ArchiveBar p={sheet.p} onClick={() => setSheet({ kind: 'archive', p: sheet.p })} />}</>}
       {sheet?.kind === 'adjust' && sheet.p && <AdjustSheet product={sheet.p} onClose={() => setSheet(null)} onDone={done} />}
       {sheet?.kind === 'archive' && sheet.p && <ConfirmDialog title={sheet.p.archived ? ar.common.restore : ar.common.archive} message={sheet.p.archived ? ar.common.restore : ar.product.archiveConfirm} danger={!sheet.p.archived}
-        onCancel={() => setSheet(null)} onConfirm={async () => { await archiveProduct(db, sheet.p!.id, !sheet.p!.archived); done(); }} />}
+        onCancel={() => setSheet(null)} onConfirm={async () => {
+          const restoring = sheet.p!.archived;
+          const r = await toast.run(() => archiveProduct(db, sheet.p!.id, !restoring), { success: restoring ? ar.fb.productRestored : ar.fb.productArchived, error: ar.fb.productFailed });
+          if (r.ok) done(); else setSheet(null);
+        }} />}
     </>
   );
 }

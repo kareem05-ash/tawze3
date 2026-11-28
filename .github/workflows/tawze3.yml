@@ -1,89 +1,124 @@
-name: Tawze3 Android CI/CD
+# NOTE: rebuilt from the project description (the original file was not in the source archive). Diff it against the committed one before merging.
+name: tawze3
 
 on:
   push:
-    branches:
-      - main
-    tags:
-      - "v*"
+    branches: [main]
+    tags: ['v*']
   pull_request:
-    branches:
-      - main
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
-    name: Test and Build Android APK
     runs-on: ubuntu-latest
-
+    outputs:
+      release: ${{ steps.version.outputs.release }}
+      label: ${{ steps.version.outputs.label }}
+      apk_name: ${{ steps.version.outputs.apk_name }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: npm
 
-      - name: Set up Java
-        uses: actions/setup-java@v4
+      # First real step: a malformed v* tag fails here, before anything is built. Branch and PR builds get the development fallback.
+      - name: Resolve version from Git tag
+        id: version
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            node scripts/version.mjs "${GITHUB_REF_NAME}" | tee -a "$GITHUB_OUTPUT"
+          else
+            node scripts/version.mjs | tee -a "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "21"
+          java-version: 21
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v4
+        uses: android-actions/setup-android@v3
         with:
-          packages: platform-tools
+          packages: 'platforms;android-35 build-tools;35.0.0'
 
-      - name: Install Android SDK packages
-        run: |
-          sdkmanager \
-            "platform-tools" \
-            "platforms;android-35" \
-            "build-tools;35.0.0"
+      - name: Set up Gradle (dependency cache)
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/') }}
 
-      - name: Install dependencies
-        run: npm ci
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
 
-      - name: Type check
-        run: npm run typecheck
-
-      - name: Run tests
-        run: npm test
-
-      - name: Build web application
+      - name: Build web app
         run: npm run build
+        env:
+          # empty for dev/PR builds -> Settings shows the development label
+          VITE_APP_VERSION: ${{ steps.version.outputs.vite_version }}
 
-      - name: Sync Capacitor Android
-        run: npx cap sync android
+      - run: npx cap sync android
 
-      - name: Build debug APK
+      - name: Build APK
         working-directory: android
-        run: ./gradlew assembleDebug
-
-      - name: Rename APK
+        shell: bash
         run: |
-          cp android/app/build/outputs/apk/debug/app-debug.apk \
-            "tawze3-${GITHUB_REF_NAME//\//-}.apk"
+          chmod +x gradlew
+          args=()
+          # Release tags pass the exact version; branch/PR builds pass nothing and get build.gradle's development fallback (0.0.0-dev / 1).
+          if [[ "${{ steps.version.outputs.release }}" == "true" ]]; then
+            args+=(-PappVersionName="${{ steps.version.outputs.version_name }}" -PappVersionCode="${{ steps.version.outputs.version_code }}")
+          fi
+          ./gradlew assembleDebug "${args[@]}"
 
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
+      - name: Name and verify APK
+        shell: bash
+        env:
+          APK_NAME: ${{ steps.version.outputs.apk_name }}
+          WANT_NAME: ${{ steps.version.outputs.version_name }}
+          WANT_CODE: ${{ steps.version.outputs.version_code }}
+        run: |
+          src=android/app/build/outputs/apk/debug/app-debug.apk
+          [[ -f "$src" ]] || { echo "::error::APK not found at $src"; exit 1; }
+          mkdir -p dist-apk && cp "$src" "dist-apk/${APK_NAME}"
+          aapt2=$(ls -d "${ANDROID_HOME}"/build-tools/*/aapt2 | sort -V | tail -n1)
+          badging=$("$aapt2" dump badging "dist-apk/${APK_NAME}" | grep '^package:')
+          echo "$badging"
+          grep -q "name='com.tawze3.app'" <<<"$badging" || { echo "::error::Unexpected application id in APK"; exit 1; }
+          grep -q "versionCode='${WANT_CODE}'" <<<"$badging" || { echo "::error::APK versionCode does not match ${WANT_CODE}"; exit 1; }
+          grep -q "versionName='${WANT_NAME}'" <<<"$badging" || { echo "::error::APK versionName does not match ${WANT_NAME}"; exit 1; }
+
+      - uses: actions/upload-artifact@v4
         with:
-          name: tawze3-android-apk
-          path: tawze3-*.apk
-          retention-days: 14
+          name: ${{ steps.version.outputs.apk_name }}
+          path: dist-apk/${{ steps.version.outputs.apk_name }}
+          if-no-files-found: error
 
+  release:
+    # Only for tags that passed validation in the build job. Publishes the APK that THIS run built (downloaded from its artifact).
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v') && needs.build.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build.outputs.apk_name }}
+          path: release
       - name: Publish GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          APK: release/${{ needs.build.outputs.apk_name }}
         run: |
-          gh release create "$GITHUB_REF_NAME" \
-            "tawze3-${GITHUB_REF_NAME}.apk" \
-            --title "Tawze3 ${GITHUB_REF_NAME}" \
-            --generate-notes \
-            --verify-tag
+          [[ -f "$APK" ]] || { echo "::error::APK $APK is missing"; exit 1; }
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Release $TAG already exists; refusing to modify an existing release."; exit 1
+          fi
+          gh release create "$TAG" "$APK" --repo "$GITHUB_REPOSITORY" --verify-tag --title "Tawze3 $TAG" --generate-notes

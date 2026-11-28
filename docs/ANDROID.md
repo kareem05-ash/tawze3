@@ -78,7 +78,7 @@ Back up `tawze3-release.keystore` and its passwords in at least two private plac
 6. Leave the app open past midnight or change the date: an automatic backup appears in Backup > the daily list.
 
 ## Versions and updates
-In `android/app/build.gradle` bump `versionCode` (integer, must increase every release) and `versionName` for each new APK. Keep `applicationId` unchanged.
+Do not edit versions by hand: `versionName` and `versionCode` come from the Git release tag (see `docs/RELEASING.md`). Keep `applicationId` unchanged.
 Installing a newer APK over the old one (same key) keeps the database. See `docs/UPDATING.md`.
 
 ## Permissions

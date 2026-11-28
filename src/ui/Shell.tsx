@@ -10,6 +10,7 @@ import { ReportsPage } from './pages/Reports';
 import { MorePage, SettingsPage } from './pages/More';
 import { BackupPage } from './pages/Backup';
 import { AutoBackupRunner } from './AutoBackupRunner';
+import { ToastProvider } from './toast';
 
 type Tab = 'home' | 'sales' | 'purchases' | 'parties' | 'more';
 const TABS: { id: Tab; icon: LucideIcon }[] = [
@@ -31,7 +32,9 @@ function Page({ route }: { route: string[] }) {
   return <Dashboard />;
 }
 
-export function Shell() {
+export function Shell() { return <ToastProvider><ShellInner /></ToastProvider>; }
+
+function ShellInner() {
   const route = useRoute();
   const { theme, toggle } = useTheme();
   const tab: Tab = TABS.find(t => t.id === route[0])?.id ?? 'home';
@@ -42,9 +45,9 @@ export function Shell() {
       <header className="topbar">
         {route.length > 1 ? <button className="icon-btn" onClick={back} aria-label={ar.common.back}><ArrowRight size={22} /></button> : <span className="icon-btn" aria-hidden />}
         <h1>{ar.appName}</h1>
-        <button className="icon-btn" onClick={toggle} aria-label={ar.theme.toggle} title={theme === 'dark' ? ar.theme.light : ar.theme.dark}>{theme === 'dark' ? <Sun size={22} /> : <Moon size={22} />}</button>
+        <button className="icon-btn" onClick={toggle} aria-label={ar.theme.toggle} title={theme === 'dark' ? ar.theme.light : ar.theme.dark}>{theme === 'dark' ? <Sun key="sun" className="icon-pop" size={22} /> : <Moon key="moon" className="icon-pop" size={22} />}</button>
       </header>
-      <main className="content"><Page route={route} /></main>
+      <main className="content"><div className="page" key={route.join('/')}><Page route={route} /></div></main>
       <nav className="bottom-nav" aria-label="التنقل الرئيسي">
         {TABS.map(({ id, icon: Icon }) => (
           <a key={id} href={`#${id}`} className={tab === id ? 'active' : ''} aria-current={tab === id ? 'page' : undefined}><Icon size={22} /><span>{ar.nav[id]}</span></a>
