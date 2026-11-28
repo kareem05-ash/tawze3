@@ -70,8 +70,19 @@ function paint(ctx: Ctx, m: ReceiptModel, draw: boolean): number {
 
   if (m.account) {
     y += 6; hline(y); y += 8;
-    kv(ar.receipt.accountBalance, m.account.tone === 'settled' ? m.account.label : m.account.amount, { color: m.account.tone === 'owes' ? C.danger : m.account.tone === 'we' ? C.ok : C.ink });
-    if (m.account.tone !== 'settled') { text(m.account.label, L + 8, y + 2, 400, 13, C.muted, 'left'); y += 22; }
+    const toneC = (t: 'owes' | 'we' | 'settled') => (t === 'owes' ? C.danger : t === 'we' ? C.ok : C.ink);
+    if (m.account.breakdown) {
+      const b = m.account.breakdown;
+      kv(ar.receipt.previousBalance, b.previous.amount, { color: toneC(b.previous.tone) });
+      text(b.previous.label, L + 8, y + 2, 400, 13, C.muted, 'left'); y += 22;
+      kv(ar.receipt.thisInvoiceRemaining, b.thisInvoice, { color: C.danger });
+      hline(y + 2); y += 6;
+      kv(ar.receipt.accountTotal, m.account.amount, { weight: 700, size: 18, color: toneC(m.account.tone) });
+      text(m.account.label, L + 8, y + 2, 400, 13, C.muted, 'left'); y += 22;
+    } else {
+      kv(ar.receipt.accountBalance, m.account.tone === 'settled' ? m.account.label : m.account.amount, { color: toneC(m.account.tone) });
+      if (m.account.tone !== 'settled') { text(m.account.label, L + 8, y + 2, 400, 13, C.muted, 'left'); y += 22; }
+    }
   }
   if (m.notes) {
     y += 10; set(400, 14, C.muted, 'right');

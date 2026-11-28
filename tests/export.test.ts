@@ -92,3 +92,60 @@ describe('very long invoices', () => {
     expect(c.width).toBeGreaterThanOrEqual(720);
   });
 });
+
+
+describe('receipt: previous balance and this invoice shown separately', () => {
+  const mkdb = async () => {
+    const d = await SqlJsDb.open(); await migrate(d, MIGRATIONS);
+    const piece = await S.createUnit(d, 'قطعة'); const p = await S.createProduct(d, { name: 'صنف', baseUnitId: piece, buyPrice: 100, sellPrice: 12000, lowStockMilli: 0 });
+    const supp = await S.createParty(d, { kind: 'supplier', name: 'مورد' });
+    await S.postInvoice(d, { kind: 'purchase', partyId: supp, date: '2026-11-01', lines: [{ productId: p, unitId: piece, qtyMilli: 10000, unitPrice: 100 }] });
+    return { d, piece, p };
+  };
+  const fmt = (n: number) => new Intl.NumberFormat('ar-EG', { style: 'currency', currency: 'EGP', minimumFractionDigits: n % 100 ? 2 : 0 }).format(n / 100);
+  it('customer owes 40, new invoice 120, pays 60 -> previous 40 + this invoice 60 = 100', async () => {
+    const { d, piece, p } = await mkdb();
+    const c = await S.createParty(d, { kind: 'customer', name: 'عميل', openingBalance: 4000, openingDate: '2026-11-01' });
+    const s = await S.postInvoice(d, { kind: 'sale', partyId: c, date: '2026-11-26', paidNow: 6000, lines: [{ productId: p, unitId: piece, qtyMilli: 1000, unitPrice: 12000 }] });
+    const m = await buildReceiptModel(d, s.id);
+    expect(m.account?.breakdown?.previous).toMatchObject({ amount: fmt(4000), tone: 'owes' });
+    expect(m.account?.breakdown?.thisInvoice).toBe(fmt(6000));
+    expect(m.account?.amount).toBe(fmt(10000));
+    const png = renderReceipt(m, (w, h) => createCanvas(w, h), 2).toBuffer('image/png'); writeFileSync(`${OUT}/breakdown-customer.png`, png);
+  });
+  it('no previous balance -> single account line as before', async () => {
+    const { d, piece, p } = await mkdb();
+    const c = await S.createParty(d, { kind: 'customer', name: 'عميل جديد' });
+    const s = await S.postInvoice(d, { kind: 'sale', partyId: c, date: '2026-11-26', paidNow: 6000, lines: [{ productId: p, unitId: piece, qtyMilli: 1000, unitPrice: 12000 }] });
+    expect((await buildReceiptModel(d, s.id)).account?.breakdown).toBeUndefined();
+  });
+  it('fully paid invoice with an old balance -> no "remaining" split (nothing left of this invoice)', async () => {
+    const { d, piece, p } = await mkdb();
+    const c = await S.createParty(d, { kind: 'customer', name: 'عميل', openingBalance: 4000, openingDate: '2026-11-01' });
+    const s = await S.postInvoice(d, { kind: 'sale', partyId: c, date: '2026-11-26', paidNow: 12000, lines: [{ productId: p, unitId: piece, qtyMilli: 1000, unitPrice: 12000 }] });
+    const m = await buildReceiptModel(d, s.id);
+    expect(m.account?.breakdown).toBeUndefined(); expect(m.account?.amount).toBe(fmt(4000));
+  });
+  it('supplier: we owed 40, new purchase 120, paid 60 -> previous 40 (we owe) + 60 = 100', async () => {
+    const { d, piece, p } = await mkdb();
+    const s2 = await S.createParty(d, { kind: 'supplier', name: 'مورد قديم', openingBalance: -4000, openingDate: '2026-11-01' });
+    const inv = await S.postInvoice(d, { kind: 'purchase', partyId: s2, date: '2026-11-26', paidNow: 6000, lines: [{ productId: p, unitId: piece, qtyMilli: 1000, unitPrice: 12000 }] });
+    const m = await buildReceiptModel(d, inv.id);
+    expect(m.account?.breakdown?.previous).toMatchObject({ amount: fmt(4000), tone: 'we' }); expect(m.account?.breakdown?.previous.label).toContain('للمورد');
+    expect(m.account?.breakdown?.thisInvoice).toBe(fmt(6000)); expect(m.account?.amount).toBe(fmt(10000));
+  });
+  it('customer prepaid 30 before, invoice 120 unpaid -> previous is a credit of 30, this invoice 120, total 90', async () => {
+    const { d, piece, p } = await mkdb();
+    const c = await S.createParty(d, { kind: 'customer', name: 'دفع مقدماً', openingBalance: -3000, openingDate: '2026-11-01' });
+    const s = await S.postInvoice(d, { kind: 'sale', partyId: c, date: '2026-11-26', lines: [{ productId: p, unitId: piece, qtyMilli: 1000, unitPrice: 12000 }] });
+    const b = (await buildReceiptModel(d, s.id)).account!;
+    expect(b.breakdown?.previous).toMatchObject({ amount: fmt(3000), tone: 'we' }); expect(b.breakdown?.thisInvoice).toBe(fmt(12000)); expect(b.amount).toBe(fmt(9000));
+  });
+  it('a cancelled invoice does not claim a remaining amount', async () => {
+    const { d, piece, p } = await mkdb();
+    const c = await S.createParty(d, { kind: 'customer', name: 'عميل', openingBalance: 4000, openingDate: '2026-11-01' });
+    const s = await S.postInvoice(d, { kind: 'sale', partyId: c, date: '2026-11-26', lines: [{ productId: p, unitId: piece, qtyMilli: 1000, unitPrice: 12000 }] });
+    await S.cancelInvoice(d, s.id);
+    expect((await buildReceiptModel(d, s.id)).account?.breakdown).toBeUndefined();
+  });
+});

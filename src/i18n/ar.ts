@@ -87,7 +87,7 @@ export const ar = {
     negMargin: 'هامش سالب (تُباع بأقل من التكلفة)', missing: 'مفقود / تالف', none: 'لا يوجد', newActivity: 'نشاط جديد', noChange: '—', noMargin: 'غير متاح',
     summary: 'الملخص المالي', page: 'صفحة', of: 'من', exportPdf: 'تصدير PDF', statementPdf: 'كشف حساب PDF', periodLabel: 'الفترة', prevPeriodLabel: 'الفترة السابقة للمقارنة', docTitle: 'تقرير الأعمال', stmtTitle: 'كشف حساب', debit: 'عليه', credit: 'له', date1: 'التاريخ', desc: 'البيان', amount1: 'المبلغ', balance1: 'الرصيد', sold: 'مباع', revenue: 'إيراد', margin1: 'هامش', stock: 'مخزون', missingQty: 'مفقود', damagedQty: 'تالف',
   },
-  receipt: { accountBalance: 'رصيد الحساب بعد هذه الفاتورة', thanks: 'شكراً لتعاملكم' },
+  receipt: { accountBalance: 'رصيد الحساب بعد هذه الفاتورة', accountTotal: 'إجمالي رصيد الحساب بعد هذه الفاتورة', previousBalance: 'الرصيد السابق', thisInvoiceRemaining: 'المتبقي من هذه الفاتورة', thanks: 'شكراً لتعاملكم' },
   share: {
     title: 'تصدير الفاتورة ومشاركتها',
     pdf: 'PDF', png: 'صورة PNG', whatsapp: 'واتساب', preparing: 'جارٍ التجهيز…', downloaded: 'تم تنزيل الملف',
